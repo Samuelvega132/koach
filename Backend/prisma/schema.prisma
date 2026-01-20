@@ -1,0 +1,80 @@
+// ============================================
+// KOACH - Prisma Schema
+// ============================================
+// Database: PostgreSQL
+// ORM: Prisma v5.9.1
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// MODEL: Song
+// ============================================
+// Almacena las canciones disponibles para karaoke
+// con su melodía de referencia y metadatos
+model Song {
+  id         String   @id @default(uuid())
+  title      String
+  artist     String
+  bpm        Int      // Tempo de la canción
+  key        String   // Tonalidad (ej: "C", "Am", "G#")
+  audioUrl   String   // URL del instrumental (backing track)
+  
+  // Datos críticos de la melodía para comparación
+  // Estructura: { notes: [{ start: number, end: number, note: string, frequency: number }] }
+  melodyData Json
+  
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relaciones
+  sessions   Session[]
+
+  @@map("songs")
+}
+
+// ============================================
+// MODEL: Session
+// ============================================
+// Representa una sesión de práctica de un usuario
+model Session {
+  id        String   @id @default(uuid())
+  songId    String
+  userName  String   // Nombre del usuario (sin autenticación por ahora)
+  score     Int      // Puntaje final (0-100) calculado por Sistema Experto
+  feedback  String   @db.Text // Retroalimentación textual generada
+  createdAt DateTime @default(now())
+
+  // Relaciones
+  song            Song             @relation(fields: [songId], references: [id], onDelete: Cascade)
+  performanceLog  PerformanceLog?
+
+  @@map("sessions")
+}
+
+// ============================================
+// MODEL: PerformanceLog
+// ============================================
+// Almacena los datos RAW de detección de pitch
+// durante una sesión para análisis posterior
+model PerformanceLog {
+  id        String   @id @default(uuid())
+  sessionId String   @unique
+  
+  // Datos crudos de detección (Hz detectados por ml5/Web Audio)
+  // Estructura: [{ timestamp: number, detectedFrequency: number, targetFrequency: number, targetNote: string }]
+  rawData   Json
+  
+  createdAt DateTime @default(now())
+
+  // Relaciones
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("performance_logs")
+}
