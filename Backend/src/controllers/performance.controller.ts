@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import prisma from '../lib/prisma';
 import { ExpertSystem } from '../services/expert-system.service';
+import { validatePerformanceData } from '../utils/validation.utils';
 
 // ============================================
 // CONTROLLER: Sessions & PerformanceLogs
@@ -15,11 +16,21 @@ export class PerformanceController {
     try {
       const { songId, userName, performanceData } = req.body;
 
-      // Validación
-      if (!songId || !userName || !performanceData || !Array.isArray(performanceData)) {
+      // Validación básica
+      if (!songId || !userName || !performanceData) {
         return res.status(400).json({
           error: 'Bad Request',
-          message: 'Missing required fields: songId, userName, performanceData (array)',
+          message: 'Missing required fields: songId, userName, performanceData',
+        });
+      }
+
+      // Validación profunda de performanceData
+      const validation = validatePerformanceData(performanceData);
+      if (!validation.isValid) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'Invalid performanceData structure',
+          details: validation.errors,
         });
       }
 
@@ -50,10 +61,19 @@ export class PerformanceController {
         },
       });
 
+      // Parsear feedback de forma segura
+      let feedbackArray: string[];
+      try {
+        feedbackArray = JSON.parse(session.feedback);
+      } catch (error) {
+        console.error('[PerformanceController.create] Error parsing feedback:', error);
+        feedbackArray = ['Error loading feedback'];
+      }
+
       return res.status(201).json({
         sessionId: session.id,
         score: session.score,
-        feedback: JSON.parse(session.feedback),
+        feedback: feedbackArray,
         analysis: {
           pitchAccuracy: analysis.feedback.pitchAccuracy,
           stability: analysis.feedback.stability,
@@ -62,6 +82,7 @@ export class PerformanceController {
         song: session.song,
       });
     } catch (error: any) {
+      console.error('[PerformanceController.create] Error:', error);
       if (error.code === 'P2003') {
         return res.status(404).json({
           error: 'Not Found',
@@ -97,6 +118,7 @@ export class PerformanceController {
 
       return res.json(session);
     } catch (error) {
+      console.error('[PerformanceController.getById] Error:', error);
       return next(error);
     }
   }
@@ -122,6 +144,7 @@ export class PerformanceController {
 
       return res.json(sessions);
     } catch (error) {
+      console.error('[PerformanceController.getBySong] Error:', error);
       return next(error);
     }
   }

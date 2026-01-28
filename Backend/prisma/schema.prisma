@@ -9,8 +9,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")       // Connection Pooler (puerto 6543) - Queries normales
+  //directUrl = env("DIRECT_URL")      // Comentado temporalmente para db:push
 }
 
 // ============================================

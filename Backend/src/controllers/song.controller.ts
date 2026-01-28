@@ -1,5 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import prisma from '../lib/prisma';
+import { storageService } from '../services/storage.service';
+import { validateSongInput } from '../utils/validation.utils';
 
 // ============================================
 // CONTROLLER: Songs
@@ -29,6 +31,7 @@ export class SongController {
 
       res.json(songs);
     } catch (error) {
+      console.error('[SongController.getAll] Error:', error);
       return next(error);
     }
   }
@@ -54,6 +57,7 @@ export class SongController {
 
       return res.json(song);
     } catch (error) {
+      console.error('[SongController.getById] Error:', error);
       return next(error);
     }
   }
@@ -64,15 +68,37 @@ export class SongController {
    */
   static async create(req: Request, res: Response, next: NextFunction) {
     try {
-      const { title, artist, bpm, key, audioUrl, melodyData } = req.body;
+      const { title, artist, bpm, key, audioFilename, melodyData } = req.body;
 
-      // Validación básica
-      if (!title || !artist || !bpm || !key || !audioUrl || !melodyData) {
+      // Validación básica de campos requeridos
+      if (!title || !artist || !bpm || !key || !audioFilename || !melodyData) {
         return res.status(400).json({
           error: 'Bad Request',
-          message: 'Missing required fields: title, artist, bpm, key, audioUrl, melodyData',
+          message: 'Missing required fields: title, artist, bpm, key, audioFilename, melodyData',
         });
       }
+
+      // Validación profunda de todos los campos
+      const validation = validateSongInput({ title, artist, bpm, key, audioFilename, melodyData });
+      if (!validation.isValid) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'Invalid song data',
+          details: validation.errors,
+        });
+      }
+
+      // Verificar que el archivo existe en Storage
+      const fileExists = await storageService.fileExists(audioFilename);
+      if (!fileExists) {
+        return res.status(404).json({
+          error: 'Not Found',
+          message: `Audio file '${audioFilename}' not found in storage. Please upload the file first.`,
+        });
+      }
+
+      // Generar URL pública desde Supabase Storage
+      const audioUrl = storageService.getPublicUrl(audioFilename);
 
       const song = await prisma.song.create({
         data: {
@@ -87,6 +113,7 @@ export class SongController {
 
       return res.status(201).json(song);
     } catch (error) {
+      console.error('[SongController.create] Error:', error);
       return next(error);
     }
   }
@@ -105,6 +132,7 @@ export class SongController {
 
       return res.status(204).send();
     } catch (error: any) {
+      console.error('[SongController.delete] Error:', error);
       if (error.code === 'P2025') {
         return res.status(404).json({
           error: 'Not Found',
