@@ -5,11 +5,14 @@ import { clsx } from "clsx";
 
 interface LiveTunerGaugeProps {
     cents: number; // Desviación en cents (-50 a +50)
-    targetNote: string;
+    detectedNote: string; // Nota detectada del micrófono
+    targetNote: string; // Nota objetivo de la canción
+    userFrequency: number | null; // Frecuencia detectada
     isSinging: boolean;
+    isMatching: boolean; // Si la nota coincide con el target
 }
 
-export const LiveTunerGauge = ({ cents, targetNote, isSinging }: LiveTunerGaugeProps) => {
+export const LiveTunerGauge = ({ cents, detectedNote, userFrequency, isSinging, isMatching }: LiveTunerGaugeProps) => {
     // Clamp cents visualmente para que no rompa la aguja
     const clampedCents = Math.max(-50, Math.min(50, cents));
 
@@ -19,7 +22,8 @@ export const LiveTunerGauge = ({ cents, targetNote, isSinging }: LiveTunerGaugeP
     // Color de retroalimentación
     const getStatusColor = () => {
         if (!isSinging) return "text-gray-500 border-gray-700";
-        if (Math.abs(cents) < 10) return "text-tuner-perfect border-tuner-perfect shadow-tuner-perfect"; // Perfecto
+        if (isMatching) return "text-green-400 border-green-400 shadow-[0_0_20px_rgba(74,222,128,0.5)]"; // GREEN when matching
+        if (Math.abs(cents) < 10) return "text-tuner-perfect border-tuner-perfect shadow-tuner-perfect";
         if (cents > 0) return "text-tuner-sharp border-tuner-sharp"; // Alto (Sharp)
         return "text-tuner-flat border-tuner-flat"; // Bajo (Flat)
     };
@@ -49,14 +53,19 @@ export const LiveTunerGauge = ({ cents, targetNote, isSinging }: LiveTunerGaugeP
                 />
             </div>
 
-            {/* Nota Central */}
+            {/* Nota Central - NOTA DETECTADA DEL MICRÓFONO */}
             <div className={clsx(
-                "relative z-10 flex items-center justify-center w-20 h-20 mb-[-10px] rounded-full border-4 bg-slate-900 transition-colors duration-300",
+                "relative z-10 flex flex-col items-center justify-center w-20 h-20 mb-[-10px] rounded-full border-4 bg-slate-900 transition-colors duration-300",
                 getStatusColor()
             )}>
-                <span className="text-3xl font-bold tracking-tighter">
-                    {targetNote || "-"}
+                <span className="text-2xl font-bold tracking-tighter">
+                    {detectedNote || "-"}
                 </span>
+                {userFrequency && (
+                    <span className="text-[8px] font-mono text-gray-400 mt-[-2px]">
+                        {Math.round(userFrequency)} Hz
+                    </span>
+                )}
             </div>
 
             {/* Indicadores Texto */}

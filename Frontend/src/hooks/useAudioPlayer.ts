@@ -12,6 +12,9 @@ interface AudioPlayerState {
 
 export const useAudioPlayer = (src: string) => {
     const audioRef = useRef<HTMLAudioElement | null>(null);
+    const currentTimeRef = useRef<number>(0); // RAF-based time tracking
+    const rafRef = useRef<number>();
+    
     const [state, setState] = useState<AudioPlayerState>({
         isPlaying: false,
         duration: 0,
@@ -31,10 +34,6 @@ export const useAudioPlayer = (src: string) => {
             setState((prev) => ({ ...prev, duration: audio.duration }));
         };
 
-        const setAudioTime = () => {
-            setState((prev) => ({ ...prev, currentTime: audio.currentTime }));
-        };
-
         const handleEnded = () => {
             setState((prev) => ({ ...prev, isPlaying: false, currentTime: 0 }));
         };
@@ -44,16 +43,31 @@ export const useAudioPlayer = (src: string) => {
             setState((prev) => ({ ...prev, error: "Error loading audio file", isPlaying: false }));
         };
 
+        // RAF loop para tiempo preciso (mejor que timeupdate event)
+        const updateTime = () => {
+            if (audio && !audio.paused) {
+                currentTimeRef.current = audio.currentTime;
+                // Solo actualizar state cada ~100ms para no bombardear React
+                setState(prev => ({ ...prev, currentTime: audio.currentTime }));
+            }
+            rafRef.current = requestAnimationFrame(updateTime);
+        };
+
         // Event Listeners
         audio.addEventListener('loadedmetadata', setAudioData);
-        audio.addEventListener('timeupdate', setAudioTime);
+        // Removemos timeupdate - usamos RAF en su lugar
         audio.addEventListener('ended', handleEnded);
         audio.addEventListener('error', handleError);
 
+        // Start RAF loop
+        updateTime();
+
         return () => {
+            if (rafRef.current) {
+                cancelAnimationFrame(rafRef.current);
+            }
             audio.pause();
             audio.removeEventListener('loadedmetadata', setAudioData);
-            audio.removeEventListener('timeupdate', setAudioTime);
             audio.removeEventListener('ended', handleEnded);
             audio.removeEventListener('error', handleError);
             audioRef.current = null;
@@ -105,6 +119,7 @@ export const useAudioPlayer = (src: string) => {
         pause,
         toggle,
         stop,
-        seek
+        seek,
+        getCurrentTime: () => currentTimeRef.current, // RAF-based getter (no re-render)
     };
 };

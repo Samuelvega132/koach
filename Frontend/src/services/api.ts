@@ -1,11 +1,10 @@
 import { Song } from '../types';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+import { API_CONFIG } from '../config/api.config';
 
 export const api = {
     getSongs: async (): Promise<Song[]> => {
         try {
-            const response = await fetch(`${API_URL}/songs`, {
+            const response = await fetch(`${API_CONFIG.baseURL}${API_CONFIG.endpoints.songs}`, {
                 cache: 'no-store', // Always fresh data
             });
             if (!response.ok) throw new Error('Failed to fetch songs');
@@ -18,7 +17,7 @@ export const api = {
 
     getSongById: async (id: string): Promise<Song | null> => {
         try {
-            const response = await fetch(`${API_URL}/songs/${id}`);
+            const response = await fetch(`${API_CONFIG.baseURL}${API_CONFIG.endpoints.songById(id)}`);
             if (!response.ok) throw new Error('Failed to fetch song');
             return await response.json();
         } catch (error) {

@@ -17,6 +17,10 @@ export const config = {
   // CORS
   FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:3000',
 
+  // JWT Secrets
+  JWT_SECRET: process.env.JWT_SECRET || 'dev-secret-key-CHANGE-IN-PRODUCTION',
+  JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret-key-CHANGE-IN-PRODUCTION',
+
   // Validaciones
   get isDevelopment() {
     return this.NODE_ENV === 'development';
@@ -30,4 +34,14 @@ export const config = {
 // Validar configuración crítica
 if (!config.DATABASE_URL) {
   console.warn('⚠️  DATABASE_URL no configurado. Verificar archivo .env');
+}
+
+// Validar secretos JWT en producción
+if (config.isProduction) {
+  if (config.JWT_SECRET === 'dev-secret-key-CHANGE-IN-PRODUCTION') {
+    throw new Error('❌ JWT_SECRET debe ser configurado en producción');
+  }
+  if (config.JWT_REFRESH_SECRET === 'dev-refresh-secret-key-CHANGE-IN-PRODUCTION') {
+    throw new Error('❌ JWT_REFRESH_SECRET debe ser configurado en producción');
+  }
 }

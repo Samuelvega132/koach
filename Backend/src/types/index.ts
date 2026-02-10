@@ -52,6 +52,54 @@ export interface PerformanceFeedback {
 }
 
 /**
+ * Telemetría completa de sesión para diagnóstico avanzado
+ */
+export interface SessionTelemetry {
+  // Métricas de Afinación
+  pitchDeviationAverage: number;        // Desviación promedio en cents (+ = agudo, - = grave)
+  pitchDeviationStdDev: number;         // Desviación estándar de errores de pitch
+  sharpNotesCount: number;              // Cantidad de notas cantadas muy agudas
+  flatNotesCount: number;               // Cantidad de notas cantadas muy graves
+
+  // Métricas de Ritmo
+  rhythmicOffsetAverage: number;        // Offset promedio en ms (+ = tarde, - = temprano)
+  earlyNotesCount: number;              // Notas que empezaron temprano
+  lateNotesCount: number;               // Notas que empezaron tarde
+
+  // Métricas de Estabilidad
+  stabilityVariance: number;            // Varianza en Hz durante notas sostenidas
+  vibratoRate: number;                  // Frecuencia del vibrato en Hz
+  vibratoDepth: number;                 // Profundidad del vibrato en cents
+
+  // Cobertura de Rango
+  rangeCoverage: {
+    notesMissed: string[];              // Notas que fallaron (ej: ["C5", "D5"])
+    notesAchieved: string[];            // Notas cantadas exitosamente
+    lowestNote: string;                 // Nota más grave intentada
+    highestNote: string;                // Nota más aguda intentada
+    comfortableRange: [string, string]; // Rango con >80% de precisión
+  };
+
+  // Métricas de Duración
+  totalDuration: number;                // Duración total de la sesión (segundos)
+  activeSingingTime: number;            // Tiempo cantando activamente (segundos)
+  silenceTime: number;                  // Tiempo en silencio (segundos)
+}
+
+/**
+ * Diagnóstico vocal generado por el sistema experto
+ */
+export interface VocalDiagnosis {
+  primaryIssue: string;                 // Problema principal detectado
+  secondaryIssues: string[];            // Problemas adicionales
+  diagnosis: string;                    // Explicación técnica detallada
+  prescription: string[];               // Ejercicios específicos recomendados
+  severity: 'mild' | 'moderate' | 'severe'; // Severidad del problema
+  affectedRange: 'low' | 'mid' | 'high' | 'full'; // Rango vocal afectado
+}
+
+
+/**
  * Request body para crear una performance
  */
 export interface CreatePerformanceRequest {

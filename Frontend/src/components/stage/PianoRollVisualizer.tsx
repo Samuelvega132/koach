@@ -1,47 +1,84 @@
 "use client";
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback, useMemo } from 'react';
 import { MelodyNote } from '../../types';
 import { getNoteCalculations } from '@/utils/noteUtils';
 
 interface PianoRollProps {
     notes: MelodyNote[];
     currentTime: number;
-    userPitch?: number | null; // Frecuencia detectada del usuario
+    userPitch?: number | null;
     height?: number;
 }
 
 export const PianoRollVisualizer = ({ notes, currentTime, userPitch, height = 300 }: PianoRollProps) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const animationRef = useRef<number>();
+    const lastTimeRef = useRef<number>(currentTime);
+    const lastPitchRef = useRef<number | null>(userPitch ?? null);
 
-    // Constantes de visualización
+    // GPU-Accelerated Constants
     const PIXELS_PER_SECOND = 100;
     const NOTE_HEIGHT = 10;
-    const MIN_FREQ = 130; // C3 aprox
-    const MAX_FREQ = 987; // B5 aprox
 
-    useEffect(() => {
+    // PRE-CALCULAR todas las notas UNA SOLA VEZ (no en cada frame)
+    const calculatedNotes = useMemo(() => {
+        return notes.map(note => getNoteCalculations(note));
+    }, [notes]);
+
+    // Calcular rango dinámico de frecuencias basado en las notas de la canción
+    const { MIN_FREQ, MAX_FREQ } = useMemo(() => {
+        if (calculatedNotes.length === 0) {
+            return { MIN_FREQ: 130, MAX_FREQ: 987 }; // Fallback: C3 a B5
+        }
+
+        const frequencies = calculatedNotes.map(note => note.frequency);
+        const minFreq = Math.min(...frequencies);
+        const maxFreq = Math.max(...frequencies);
+
+        // Agregar padding del 20% arriba y abajo para mejor visualización
+        const range = maxFreq - minFreq;
+        const padding = range * 0.1;
+
+        return {
+            MIN_FREQ: Math.max(50, minFreq - padding), // Mínimo absoluto: 50 Hz
+            MAX_FREQ: Math.min(1500, maxFreq + padding) // Máximo absoluto: 1500 Hz
+        };
+    }, [calculatedNotes]);
+
+    const getY = useCallback((freq: number, h: number) => {
+        const normalized = 1 - Math.min(1, Math.max(0, (freq - MIN_FREQ) / (MAX_FREQ - MIN_FREQ)));
+        return normalized * (h - 40) + 20;
+    }, [MIN_FREQ, MAX_FREQ]);
+
+    // CRITICAL: Use RAF for smooth 60fps rendering
+    const render = useCallback(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { 
+            alpha: false, // Better performance
+            desynchronized: true // Unlock GPU rendering
+        });
         if (!ctx) return;
 
-        // Función helper para Y
-        const getY = (freq: number) => {
-            const normalized = 1 - Math.min(1, Math.max(0, (freq - MIN_FREQ) / (MAX_FREQ - MIN_FREQ)));
-            return normalized * (height - 40) + 20;
-        };
-
-        // Configurar tamaño
         const { width } = canvas.getBoundingClientRect();
-        canvas.width = width;
-        canvas.height = height;
+        const dpr = Math.min(window.devicePixelRatio, 2); // Limit to 2x for perf
+        
+        // Resize canvas only if needed
+        if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            canvas.style.width = `${width}px`;
+            canvas.style.height = `${height}px`;
+            ctx.scale(dpr, dpr);
+        }
 
-        // Limpiar
-        ctx.clearRect(0, 0, width, height);
+        // Clear
+        ctx.fillStyle = '#020617'; // slate-950
+        ctx.fillRect(0, 0, width, height);
 
-        // Fondo Cyberpunk (Grid)
+        // Grid (Static, can be optimized further with offscreen canvas)
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
         ctx.lineWidth = 1;
         for (let i = 0; i < height; i += NOTE_HEIGHT * 4) {
@@ -51,44 +88,43 @@ export const PianoRollVisualizer = ({ notes, currentTime, userPitch, height = 30
             ctx.stroke();
         }
 
-        // Dibujar Notas Objetivo (Barras)
-        // Desplazamiento: currentTime está en el 20% del ancho del canvas (línea de "ahora")
         const nowX = width * 0.2;
+        const time = lastTimeRef.current;
 
-        notes.forEach(note => {
-            const { start, end, frequency, lyric } = getNoteCalculations(note);
+        // Render Notes (usando notas pre-calculadas)
+        calculatedNotes.forEach(note => {
+            const { start, end, frequency, lyric } = note;
 
-            const startX = nowX + (start - currentTime) * PIXELS_PER_SECOND;
+            const startX = nowX + (start - time) * PIXELS_PER_SECOND;
             const widthPx = (end - start) * PIXELS_PER_SECOND;
-            const y = getY(frequency);
+            const y = getY(frequency, height);
 
-            // Solo dibujar si está visible
-            if (startX + widthPx > -100 && startX < width + 100) {
-                // Estilo Neon
-                ctx.shadowBlur = 10;
-                ctx.shadowColor = '#8b5cf6'; // Violet glow
-                ctx.fillStyle = 'rgba(139, 92, 246, 0.8)';
-                ctx.fillRect(startX, y - NOTE_HEIGHT / 2, widthPx, NOTE_HEIGHT);
+            // Frustum culling
+            if (startX + widthPx < -100 || startX > width + 100) return;
 
-                // Borde brillante
-                ctx.strokeStyle = '#fff';
-                ctx.lineWidth = 1;
-                ctx.strokeRect(startX, y - NOTE_HEIGHT / 2, widthPx, NOTE_HEIGHT);
+            // Neon glow
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#8b5cf6';
+            ctx.fillStyle = 'rgba(139, 92, 246, 0.8)';
+            ctx.fillRect(startX, y - NOTE_HEIGHT / 2, widthPx, NOTE_HEIGHT);
 
-                // Dibujar letra si existe
-                if (lyric) {
-                    ctx.font = '10px Inter, sans-serif';
-                    ctx.fillStyle = '#fff';
-                    ctx.shadowBlur = 0;
-                    ctx.fillText(lyric, startX, y - NOTE_HEIGHT);
-                }
+            // Border
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(startX, y - NOTE_HEIGHT / 2, widthPx, NOTE_HEIGHT);
 
-                // Reset shadow
+            // Lyric
+            if (lyric) {
+                ctx.font = '10px Inter, sans-serif';
+                ctx.fillStyle = '#fff';
                 ctx.shadowBlur = 0;
+                ctx.fillText(lyric, startX, y - NOTE_HEIGHT);
             }
+
+            ctx.shadowBlur = 0;
         });
 
-        // Línea de "AHORA" (Playhead)
+        // Playhead
         ctx.beginPath();
         ctx.moveTo(nowX, 0);
         ctx.lineTo(nowX, height);
@@ -97,26 +133,47 @@ export const PianoRollVisualizer = ({ notes, currentTime, userPitch, height = 30
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Dibujar Pitch del Usuario (Cursor)
-        if (userPitch && userPitch > 0) {
-            const userY = getY(userPitch);
+        // User Pitch Cursor (GPU-accelerated with glow)
+        const pitch = lastPitchRef.current;
+        if (pitch && pitch > 0) {
+            const userY = getY(pitch, height);
 
             ctx.beginPath();
             ctx.arc(nowX, userY, 6, 0, Math.PI * 2);
-            ctx.fillStyle = '#facc15'; // Yellow
+            ctx.fillStyle = '#facc15';
             ctx.shadowBlur = 15;
             ctx.shadowColor = '#facc15';
             ctx.fill();
+            ctx.shadowBlur = 0;
         }
 
-    }, [notes, currentTime, userPitch, height]);
+    }, [calculatedNotes, height, getY]);
+
+    // RAF Loop
+    useEffect(() => {
+        lastTimeRef.current = currentTime;
+        lastPitchRef.current = userPitch ?? null;
+
+        const loop = () => {
+            render();
+            animationRef.current = requestAnimationFrame(loop);
+        };
+
+        loop();
+
+        return () => {
+            if (animationRef.current) {
+                cancelAnimationFrame(animationRef.current);
+            }
+        };
+    }, [currentTime, userPitch, render]);
 
     return (
         <div className="w-full rounded-xl overflow-hidden glass-panel">
             <canvas
                 ref={canvasRef}
                 className="w-full block"
-                style={{ height }}
+                style={{ height, willChange: 'transform' }} // GPU hint
             />
         </div>
     );

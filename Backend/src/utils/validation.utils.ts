@@ -3,73 +3,118 @@
  * VALIDATION UTILITIES
  * ============================================
  * Funciones reutilizables para validación de datos
+ * Refactorizado para seguir principios de Clean Code
  */
 
-// import { PerformanceDataPoint } from '../types'; // Eliminado por no uso
+import { z } from 'zod';
+
+// ============================================
+// ZOD SCHEMAS
+// ============================================
+
+/**
+ * Schema para validar un punto de performance
+ */
+const PerformanceDataPointSchema = z.object({
+  timestamp: z.number().nonnegative('Timestamp must be non-negative'),
+  detectedFrequency: z.number().positive('Detected frequency must be positive').nullable(),
+  targetFrequency: z.number().positive('Target frequency must be positive'),
+  targetNote: z.string().min(1, 'Target note cannot be empty'),
+});
+
+/**
+ * Schema para validar datos de performance
+ */
+const PerformanceDataSchema = z
+  .array(PerformanceDataPointSchema)
+  .min(1, 'Performance data cannot be empty');
+
+/**
+ * Schema para validar una nota de melodía
+ */
+const MelodyNoteSchema = z.object({
+  start: z.number().nonnegative('Start time must be non-negative'),
+  end: z.number().positive('End time must be positive'),
+  note: z.string().min(1, 'Note name cannot be empty'),
+  frequency: z.number().positive('Frequency must be positive'),
+}).refine((data) => data.end > data.start, {
+  message: 'End time must be greater than start time',
+  path: ['end'],
+});
+
+/**
+ * Schema para validar datos de melodía
+ */
+const MelodyDataSchema = z.object({
+  notes: z.array(MelodyNoteSchema).min(1, 'Melody must have at least one note'),
+});
+
+/**
+ * Schema para validar entrada de canción
+ */
+const SongInputSchema = z.object({
+  title: z.string()
+    .min(1, 'Title cannot be empty')
+    .max(200, 'Title must be 200 characters or less')
+    .trim(),
+  artist: z.string()
+    .min(1, 'Artist cannot be empty')
+    .max(200, 'Artist must be 200 characters or less')
+    .trim(),
+  bpm: z.number()
+    .int('BPM must be an integer')
+    .min(20, 'BPM must be at least 20')
+    .max(300, 'BPM must be at most 300'),
+  key: z.string()
+    .min(1, 'Key cannot be empty')
+    .max(10, 'Key must be 10 characters or less')
+    .trim(),
+  audioFilename: z.string()
+    .min(1, 'Audio filename cannot be empty')
+    .max(255, 'Audio filename must be 255 characters or less')
+    .endsWith('.mp3', 'Audio filename must end with .mp3'),
+  melodyData: MelodyDataSchema,
+});
+
+// ============================================
+// VALIDATION RESULT INTERFACE
+// ============================================
 
 /**
  * Resultado de validación
  */
 export interface ValidationResult {
-    isValid: boolean;
-    errors: string[];
+  isValid: boolean;
+  errors: string[];
 }
+
+// ============================================
+// VALIDATION FUNCTIONS
+// ============================================
 
 /**
  * Valida la estructura de performanceData
  * @param data - Datos de performance a validar
  * @returns Resultado de validación
  */
-export function validatePerformanceData(data: any): ValidationResult {
-    const errors: string[] = [];
-
-    // Verificar que sea un array
-    if (!Array.isArray(data)) {
-        errors.push('performanceData must be an array');
-        return { isValid: false, errors };
+export function validatePerformanceData(data: unknown): ValidationResult {
+  try {
+    PerformanceDataSchema.parse(data);
+    return { isValid: true, errors: [] };
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return {
+        isValid: false,
+        errors: error.issues.map((issue) => 
+          `${issue.path.join('.')}: ${issue.message}`
+        ),
+      };
     }
-
-    // Verificar que no esté vacío
-    if (data.length === 0) {
-        errors.push('performanceData cannot be empty');
-        return { isValid: false, errors };
-    }
-
-    // Validar cada elemento
-    data.forEach((point, index) => {
-        if (!point || typeof point !== 'object') {
-            errors.push(`performanceData[${index}] must be an object`);
-            return;
-        }
-
-        // Validar timestamp
-        if (typeof point.timestamp !== 'number' || point.timestamp < 0) {
-            errors.push(`performanceData[${index}].timestamp must be a non-negative number`);
-        }
-
-        // Validar targetFrequency
-        if (typeof point.targetFrequency !== 'number' || point.targetFrequency <= 0) {
-            errors.push(`performanceData[${index}].targetFrequency must be a positive number`);
-        }
-
-        // Validar targetNote
-        if (typeof point.targetNote !== 'string' || point.targetNote.trim() === '') {
-            errors.push(`performanceData[${index}].targetNote must be a non-empty string`);
-        }
-
-        // Validar detectedFrequency (puede ser null)
-        if (
-            point.detectedFrequency !== null &&
-            (typeof point.detectedFrequency !== 'number' || point.detectedFrequency <= 0)
-        ) {
-            errors.push(`performanceData[${index}].detectedFrequency must be null or a positive number`);
-        }
-    });
-
     return {
-        isValid: errors.length === 0,
-        errors,
+      isValid: false,
+      errors: ['Unknown validation error'],
     };
+  }
 }
 
 /**
@@ -77,59 +122,24 @@ export function validatePerformanceData(data: any): ValidationResult {
  * @param data - Datos de melodía a validar
  * @returns Resultado de validación
  */
-export function validateMelodyData(data: any): ValidationResult {
-    const errors: string[] = [];
-
-    // Verificar que sea un objeto
-    if (!data || typeof data !== 'object') {
-        errors.push('melodyData must be an object');
-        return { isValid: false, errors };
+export function validateMelodyData(data: unknown): ValidationResult {
+  try {
+    MelodyDataSchema.parse(data);
+    return { isValid: true, errors: [] };
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return {
+        isValid: false,
+        errors: error.issues.map((issue) => 
+          `${issue.path.join('.')}: ${issue.message}`
+        ),
+      };
     }
-
-    // Verificar que tenga el array de notas
-    if (!Array.isArray(data.notes)) {
-        errors.push('melodyData.notes must be an array');
-        return { isValid: false, errors };
-    }
-
-    // Verificar que no esté vacío
-    if (data.notes.length === 0) {
-        errors.push('melodyData.notes cannot be empty');
-        return { isValid: false, errors };
-    }
-
-    // Validar cada nota
-    data.notes.forEach((note: any, index: number) => {
-        if (!note || typeof note !== 'object') {
-            errors.push(`melodyData.notes[${index}] must be an object`);
-            return;
-        }
-
-        // Validar start
-        if (typeof note.start !== 'number' || note.start < 0) {
-            errors.push(`melodyData.notes[${index}].start must be a non-negative number`);
-        }
-
-        // Validar end
-        if (typeof note.end !== 'number' || note.end <= note.start) {
-            errors.push(`melodyData.notes[${index}].end must be greater than start`);
-        }
-
-        // Validar note
-        if (typeof note.note !== 'string' || note.note.trim() === '') {
-            errors.push(`melodyData.notes[${index}].note must be a non-empty string`);
-        }
-
-        // Validar frequency
-        if (typeof note.frequency !== 'number' || note.frequency <= 0) {
-            errors.push(`melodyData.notes[${index}].frequency must be a positive number`);
-        }
-    });
-
     return {
-        isValid: errors.length === 0,
-        errors,
+      isValid: false,
+      errors: ['Unknown validation error'],
     };
+  }
 }
 
 /**
@@ -137,62 +147,24 @@ export function validateMelodyData(data: any): ValidationResult {
  * @param input - Datos de entrada
  * @returns Resultado de validación
  */
-export function validateSongInput(input: any): ValidationResult {
-    const errors: string[] = [];
-
-    // Validar title
-    if (typeof input.title !== 'string') {
-        errors.push('title must be a string');
-    } else if (input.title.trim().length === 0) {
-        errors.push('title cannot be empty');
-    } else if (input.title.length > 200) {
-        errors.push('title must be 200 characters or less');
+export function validateSongInput(input: unknown): ValidationResult {
+  try {
+    SongInputSchema.parse(input);
+    return { isValid: true, errors: [] };
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return {
+        isValid: false,
+        errors: error.issues.map((issue) => 
+          `${issue.path.join('.')}: ${issue.message}`
+        ),
+      };
     }
-
-    // Validar artist
-    if (typeof input.artist !== 'string') {
-        errors.push('artist must be a string');
-    } else if (input.artist.trim().length === 0) {
-        errors.push('artist cannot be empty');
-    } else if (input.artist.length > 200) {
-        errors.push('artist must be 200 characters or less');
-    }
-
-    // Validar bpm
-    if (typeof input.bpm !== 'number') {
-        errors.push('bpm must be a number');
-    } else if (input.bpm < 20 || input.bpm > 300) {
-        errors.push('bpm must be between 20 and 300');
-    }
-
-    // Validar key
-    if (typeof input.key !== 'string') {
-        errors.push('key must be a string');
-    } else if (input.key.trim().length === 0) {
-        errors.push('key cannot be empty');
-    } else if (input.key.length > 10) {
-        errors.push('key must be 10 characters or less');
-    }
-
-    // Validar audioFilename
-    if (typeof input.audioFilename !== 'string') {
-        errors.push('audioFilename must be a string');
-    } else if (!input.audioFilename.endsWith('.mp3')) {
-        errors.push('audioFilename must end with .mp3');
-    } else if (input.audioFilename.length > 255) {
-        errors.push('audioFilename must be 255 characters or less');
-    }
-
-    // Validar melodyData
-    const melodyValidation = validateMelodyData(input.melodyData);
-    if (!melodyValidation.isValid) {
-        errors.push(...melodyValidation.errors);
-    }
-
     return {
-        isValid: errors.length === 0,
-        errors,
+      isValid: false,
+      errors: ['Unknown validation error'],
     };
+  }
 }
 
 /**
@@ -201,5 +173,5 @@ export function validateSongInput(input: any): ValidationResult {
  * @returns String sanitizado
  */
 export function sanitizeString(input: string): string {
-    return input.trim().replace(/[<>]/g, '');
+  return input.trim().replace(/[<>]/g, '');
 }

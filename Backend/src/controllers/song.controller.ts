@@ -131,14 +131,17 @@ export class SongController {
       });
 
       return res.status(204).send();
-    } catch (error: any) {
+    } catch (error) {
       console.error('[SongController.delete] Error:', error);
-      if (error.code === 'P2025') {
+      
+      // Manejar error de Prisma cuando el registro no existe
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'P2025') {
         return res.status(404).json({
           error: 'Not Found',
           message: 'Song not found',
         });
       }
+      
       return next(error);
     }
   }

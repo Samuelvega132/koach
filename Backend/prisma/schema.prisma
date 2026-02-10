@@ -9,8 +9,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")       // Connection Pooler (puerto 6543) - Queries normales
+  provider = "postgresql"
+  url      = env("DATABASE_URL") // Connection Pooler (puerto 6543) - Queries normales
   //directUrl = env("DIRECT_URL")      // Comentado temporalmente para db:push
 }
 
@@ -20,22 +20,22 @@ datasource db {
 // Almacena las canciones disponibles para karaoke
 // con su melodía de referencia y metadatos
 model Song {
-  id         String   @id @default(uuid())
-  title      String
-  artist     String
-  bpm        Int      // Tempo de la canción
-  key        String   // Tonalidad (ej: "C", "Am", "G#")
-  audioUrl   String   // URL del instrumental (backing track)
-  
+  id       String @id @default(uuid())
+  title    String
+  artist   String
+  bpm      Int // Tempo de la canción
+  key      String // Tonalidad (ej: "C", "Am", "G#")
+  audioUrl String // URL del instrumental (backing track)
+
   // Datos críticos de la melodía para comparación
   // Estructura: { notes: [{ start: number, end: number, note: string, frequency: number }] }
   melodyData Json
-  
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relaciones
-  sessions   Session[]
+  sessions Session[]
 
   @@map("songs")
 }
@@ -45,18 +45,51 @@ model Song {
 // ============================================
 // Representa una sesión de práctica de un usuario
 model Session {
-  id        String   @id @default(uuid())
-  songId    String
-  userName  String   // Nombre del usuario (sin autenticación por ahora)
-  score     Int      // Puntaje final (0-100) calculado por Sistema Experto
-  feedback  String   @db.Text // Retroalimentación textual generada
+  id       String @id @default(uuid())
+  songId   String
+  userName String // Nombre del usuario (sin autenticación por ahora)
+  score    Int // Puntaje final (0-100) calculado por Sistema Experto
+  feedback String @db.Text // Retroalimentación textual generada
+
+  // 🆕 Telemetría avanzada del Sistema Experto
+  // Estructura: SessionTelemetry (15+ métricas de performance)
+  telemetry Json?
+
+  // 🆕 Análisis de performance (scores de pitch, stability, timing)
+  // Estructura: PerformanceFeedback (pitchAccuracy, stability, timing)
+  analysis Json?
+
+  // 🆕 Diagnóstico vocal generado por el Sistema Experto
+  // Estructura: VocalDiagnosis (problema, prescripción, severidad)
+  diagnosis Json?
+
   createdAt DateTime @default(now())
 
   // Relaciones
-  song            Song             @relation(fields: [songId], references: [id], onDelete: Cascade)
-  performanceLog  PerformanceLog?
+  song           Song            @relation(fields: [songId], references: [id], onDelete: Cascade)
+  performanceLog PerformanceLog?
 
   @@map("sessions")
+}
+
+// ============================================
+// MODEL: User
+// ============================================
+// Sistema de autenticación de usuarios
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relaciones
+  performanceLogs PerformanceLog[]
+
+  @@index([email])
+  @@map("users")
 }
 
 // ============================================
@@ -65,17 +98,22 @@ model Session {
 // Almacena los datos RAW de detección de pitch
 // durante una sesión para análisis posterior
 model PerformanceLog {
-  id        String   @id @default(uuid())
-  sessionId String   @unique
-  
+  id        String @id @default(uuid())
+  sessionId String @unique
+
+  // ⚠️ userId OPCIONAL para mantener compatibilidad con registros antiguos
+  userId String?
+
   // Datos crudos de detección (Hz detectados por ml5/Web Audio)
   // Estructura: [{ timestamp: number, detectedFrequency: number, targetFrequency: number, targetNote: string }]
-  rawData   Json
-  
+  rawData Json
+
   createdAt DateTime @default(now())
 
   // Relaciones
-  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  @@index([userId])
   @@map("performance_logs")
 }

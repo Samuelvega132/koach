@@ -1,10 +1,12 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import { config } from './config/env.config';
 import { corsOptions } from './config/cors.config';
 import songRoutes from './routes/song.routes';
 import performanceRoutes from './routes/performance.routes';
+import authRoutes from './routes/auth.routes';
 
 // ============================================
 // INICIALIZAR APP
@@ -22,6 +24,7 @@ app.use(cors(corsOptions)); // CORS configurado
 // ============================================
 app.use(express.json({ limit: '10mb' })); // JSON con límite de 10MB
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser()); // Parse cookies for refresh tokens
 
 // ============================================
 // ROUTES
@@ -36,6 +39,7 @@ app.get('/api/health', (_, res) => {
 
 app.use('/api/songs', songRoutes);
 app.use('/api/performances', performanceRoutes);
+app.use('/api/auth', authRoutes);
 
 // ============================================
 // 404 HANDLER

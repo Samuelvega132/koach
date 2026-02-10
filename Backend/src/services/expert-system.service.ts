@@ -9,6 +9,8 @@
 import {
   PerformanceDataPoint,
   PerformanceFeedback,
+  SessionTelemetry,
+  VocalDiagnosis,
 } from '../types';
 import {
   frequencyToCents,
@@ -16,6 +18,8 @@ import {
   calculateJitter,
   calculateStabilityPercentage,
 } from '../utils/dsp.utils';
+import { calculateSessionTelemetry } from '../utils/telemetry.utils';
+import { VocalDiagnosisService } from './vocal-diagnosis.service';
 
 /**
  * Motor de inferencia principal
@@ -23,11 +27,16 @@ import {
  */
 export class ExpertSystem {
   /**
-   * Analiza una performance completa y genera feedback
+   * Analiza una performance completa y genera feedback + diagnóstico avanzado
    */
-  static analyzePerformance(data: PerformanceDataPoint[]): {
+  static analyzePerformance(
+    data: PerformanceDataPoint[],
+    songDuration: number
+  ): {
     score: number;
     feedback: PerformanceFeedback;
+    telemetry: SessionTelemetry;
+    diagnosis: VocalDiagnosis;
   } {
     // Filtrar puntos con frecuencia detectada válida
     const validPoints = data.filter((p) => p.detectedFrequency && p.detectedFrequency > 0);
@@ -36,8 +45,20 @@ export class ExpertSystem {
       return {
         score: 0,
         feedback: this.getEmptyFeedback('No se detectó canto válido'),
+        telemetry: this.getEmptyTelemetry(songDuration),
+        diagnosis: this.getEmptyDiagnosis(),
       };
     }
+
+    // ============================================
+    // CÁLCULO DE TELEMETRÍA AVANZADA
+    // ============================================
+    const telemetry = calculateSessionTelemetry(data, songDuration);
+
+    // ============================================
+    // DIAGNÓSTICO VOCAL EXPERTO
+    // ============================================
+    const diagnosis = VocalDiagnosisService.diagnose(telemetry);
 
     // ============================================
     // REGLA 1: AFINACIÓN (Pitch Accuracy)
@@ -64,13 +85,12 @@ export class ExpertSystem {
     );
 
     // ============================================
-    // GENERACIÓN DE RECOMENDACIONES
+    // GENERACIÓN DE RECOMENDACIONES (Combinadas)
     // ============================================
-    const recommendations = this.generateRecommendations(
-      pitchAccuracy,
-      stability,
-      timing
-    );
+    const recommendations = [
+      ...this.generateRecommendations(pitchAccuracy, stability, timing),
+      ...diagnosis.prescription.slice(0, 2), // Añadir top 2 ejercicios del diagnóstico
+    ];
 
     return {
       score,
@@ -80,6 +100,8 @@ export class ExpertSystem {
         timing,
         recommendations,
       },
+      telemetry,
+      diagnosis,
     };
   }
 
@@ -226,6 +248,48 @@ export class ExpertSystem {
       stability: { score: 0, avgJitter: 0, stableNotesPercentage: 0 },
       timing: { score: 0, avgLatency: 0, onTimePercentage: 0 },
       recommendations: [reason],
+    };
+  }
+
+  /**
+   * Telemetría vacía para casos sin datos
+   */
+  private static getEmptyTelemetry(duration: number): SessionTelemetry {
+    return {
+      pitchDeviationAverage: 0,
+      pitchDeviationStdDev: 0,
+      sharpNotesCount: 0,
+      flatNotesCount: 0,
+      rhythmicOffsetAverage: 0,
+      earlyNotesCount: 0,
+      lateNotesCount: 0,
+      stabilityVariance: 0,
+      vibratoRate: 0,
+      vibratoDepth: 0,
+      rangeCoverage: {
+        notesMissed: [],
+        notesAchieved: [],
+        lowestNote: 'N/A',
+        highestNote: 'N/A',
+        comfortableRange: ['N/A', 'N/A'],
+      },
+      totalDuration: duration,
+      activeSingingTime: 0,
+      silenceTime: duration,
+    };
+  }
+
+  /**
+   * Diagnóstico vacío para casos sin datos
+   */
+  private static getEmptyDiagnosis(): VocalDiagnosis {
+    return {
+      primaryIssue: 'No se detectó canto',
+      secondaryIssues: [],
+      diagnosis: 'No hay suficientes datos para generar un diagnóstico.',
+      prescription: ['Intenta cantar durante la pista para recibir feedback.'],
+      severity: 'mild',
+      affectedRange: 'full',
     };
   }
 }
