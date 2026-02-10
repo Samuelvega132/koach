@@ -46,32 +46,39 @@
  * ⚠️ UMBRALES AJUSTADOS PARA KARAOKE AMATEUR (NO PROFESIONAL)
  * 
  * CONTEXTO:
- * - Usuarios promedio tienen error RMS de 30-50 cents (aceptable para amateur)
- * - Profesionales tienen error RMS < 10 cents
- * - Sistema debe distinguir entre "cantaste bien" y "hay problemas serios"
+ * - Usuarios amateur/intermedio tienen error RMS de 30-80 cents (normal)
+ * - Profesionales tienen error RMS < 20 cents
+ * - Sistema debe distinguir entre "cantaste bien" y "hay problemas reales"
+ * 
+ * FILOSOFÍA DE UMBRALES:
+ * - 0-50 cents: EXCELENTE (usuario canta muy bien para amateur)
+ * - 50-100 cents: BUENO (afinación aceptable, seguir practicando)
+ * - 100-150 cents: REGULAR (necesita práctica pero no es grave)
+ * - 150+ cents: PROBLEMAS (requiere trabajo urgente)
  */
 
 % Umbrales de afinación (en cents, 100 cents = 1 semitono)
-umbral_hipoafinacion(-25).          % Canta bajo si promedio < -25 cents
-umbral_hiperafinacion(25).          % Canta alto si promedio > 25 cents
-umbral_pitch_variance_alta(40).     % Varianza alta = inconsistencia
+umbral_hipoafinacion(-35).          % Canta bajo si promedio < -35 cents
+umbral_hiperafinacion(35).          % Canta alto si promedio > 35 cents
+umbral_pitch_variance_alta(50).     % Varianza alta = inconsistencia
 
 % Umbrales de estabilidad (en Hz)
 umbral_estabilidad_baja(20).        % Tremolo si varianza > 20 Hz
 umbral_vibrato_excesivo(7.0).       % Vibrato normal: 4-6 Hz
 
 % Umbrales de timing (en milisegundos)
-umbral_timing_offset(80).           % Offset significativo > 80ms
+umbral_timing_offset(100).          % Offset significativo > 100ms
 umbral_ratio_anticipacion(1.5).     % Ratio early/late para anticipación
 
 % Umbrales de rango
-umbral_cobertura_rango_baja(0.4).   % 40% de notas falladas = problema
+umbral_cobertura_rango_baja(0.5).   % 50% de notas falladas = problema
 
 % Clasificación de severidad (valor numérico en cents RMS)
-% ⚠️ AJUSTADO PARA KARAOKE AMATEUR - valores más permisivos
-umbral_severidad_leve(50).          % 50 cents RMS = leve (medio semitono - amateur aceptable)
-umbral_severidad_moderada(120).     % 120 cents RMS = moderado (un semitono completo - necesita práctica)
-umbral_severidad_severa(200).       % 200 cents RMS = severo (dos semitonos - muy desafinado)
+% ⚠️ AJUSTADO PARA KARAOKE AMATEUR - valores realistas
+umbral_excelente(50).               % 0-50 cents RMS = EXCELENTE para amateur
+umbral_bueno(100).                  % 50-100 cents RMS = BUENO, afinación aceptable
+umbral_regular(150).                % 100-150 cents RMS = REGULAR, necesita práctica
+% 150+ cents RMS = PROBLEMAS SERIOS
 
 /* ============================================
  * SECCIÓN 3: REGLAS DE CLASIFICACIÓN (Nivel 1 - Heurísticas)
@@ -83,21 +90,45 @@ umbral_severidad_severa(200).       % 200 cents RMS = severo (dos semitonos - mu
  * Representa el ERROR PROMEDIO, no la dirección
  */
 
-% UMBRAL DESAFINACIÓN: 80 cents RMS = casi un semitono de error promedio
-% Valores realistas para karaoke amateur:
-% - 0-50 cents: Excelente para amateur
-% - 50-100 cents: Bueno, afinación aceptable
-% - 100-150 cents: Regular, necesita práctica
-% - 150+ cents: Desafinado, trabajo urgente
-umbral_desafinacion(100).
-
-% R-CLASE-1: Clasificación de Afinación - DESAFINADO (error RMS > umbral)
-esta_desafinado :-
+% ============================================
+% R-CLASE-0: Performance EXCELENTE (0-50 cents RMS)
+% ============================================
+performance_excelente :-
     pitch_deviation_cents(X),
-    umbral_desafinacion(U),
+    umbral_excelente(U),
+    X =< U.
+
+% ============================================
+% R-CLASE-1: Performance BUENA (50-100 cents RMS)
+% ============================================
+performance_buena :-
+    pitch_deviation_cents(X),
+    umbral_excelente(U1),
+    umbral_bueno(U2),
+    X > U1,
+    X =< U2.
+
+% ============================================
+% R-CLASE-2: Performance REGULAR (100-150 cents RMS)
+% ============================================
+performance_regular :-
+    pitch_deviation_cents(X),
+    umbral_bueno(U1),
+    umbral_regular(U2),
+    X > U1,
+    X =< U2.
+
+% ============================================
+% R-CLASE-3: DESAFINACIÓN SERIA (150+ cents RMS)
+% ============================================
+desafinacion_seria :-
+    pitch_deviation_cents(X),
+    umbral_regular(U),
     X > U.
 
-% R-CLASE-2: Clasificación de Afinación - Tendencia a cantar BAJO (FLAT)
+% ============================================
+% R-CLASE-4: Tendencia a cantar BAJO (FLAT)
+% ============================================
 % Usamos notas_bajas (flatNotesCount) como indicador de tendencia
 es_calado :-
     notas_bajas(N),
@@ -110,10 +141,17 @@ es_sostenido :-
     N > 5.  % Más de 5 notas muy agudas
 
 % R-CLASE-4: Clasificación de Afinación - En Tono (error mínimo)
+% Afinado = EXCELENTE o BUENO (≤100 cents RMS)
 esta_afinado :-
     pitch_deviation_cents(X),
-    umbral_desafinacion(U),
+    umbral_bueno(U),
     X =< U.
+
+% R-CLASE-4B: Desafinado (REGULAR o SERIA, >100 cents RMS)
+esta_desafinado :-
+    pitch_deviation_cents(X),
+    umbral_bueno(U),
+    X > U.
 
 % R-CLASE-4: Clasificación de Estabilidad - Inestable (Tremolo)
 tiene_tremolo :-
@@ -212,30 +250,30 @@ buen_dominio_notas :-
  * No necesitamos abs() porque RMS ya es valor absoluto
  */
 
-% Severidad para afinación (basado en RMS, siempre positivo)
+% Severidad para afinación (basado en umbrales graduados: 50/100/150)
 severidad_afinacion(severe) :-
     pitch_deviation_cents(X),
-    umbral_severidad_severa(U),
-    X >= U.
+    umbral_regular(U),
+    X > U.  % >150 cents = SEVERO
 
 severidad_afinacion(moderate) :-
     pitch_deviation_cents(X),
-    umbral_severidad_moderada(UMod),
-    umbral_severidad_severa(USev),
-    X >= UMod,
-    X < USev.
+    umbral_bueno(UBueno),
+    umbral_regular(URegular),
+    X > UBueno,
+    X =< URegular.  % 100-150 cents = MODERADO
 
 severidad_afinacion(mild) :-
     pitch_deviation_cents(X),
-    umbral_severidad_leve(ULeve),
-    umbral_severidad_moderada(UMod),
-    X >= ULeve,
-    X < UMod.
+    umbral_excelente(UExc),
+    umbral_bueno(UBueno),
+    X > UExc,
+    X =< UBueno.  % 50-100 cents = LEVE
 
 severidad_afinacion(none) :-
     pitch_deviation_cents(X),
-    umbral_severidad_leve(U),
-    X < U.
+    umbral_excelente(U),
+    X =< U.  % ≤50 cents = SIN PROBLEMAS
 
 % Severidad para estabilidad
 severidad_estabilidad(severe) :-
@@ -274,21 +312,41 @@ severidad_timing(mild) :-
  * Reglas complejas que utilizan conjunciones y disyunciones
  * para llegar a conclusiones pedagógicas específicas
  * 
- * ⚠️ NUEVA REGLA: desafinacion_general es la más importante
- * Se activa cuando el RMS supera el umbral de desafinación
+ * ⚠️ ORDEN IMPORTANTE: Diagnósticos positivos tienen prioridad
+ * Las reglas se evalúan de arriba hacia abajo
  */
 
-% R-DIAG-0: DESAFINACIÓN GENERAL (REGLA PRINCIPAL - RMS > umbral)
-% Esta regla se activa siempre que haya error significativo de afinación
-% SIMPLIFICADO: Solo verifica que está desafinado (RMS > 5 cents)
-diagnostico(desafinacion_general) :-
-    esta_desafinado.
+% ============================================
+% 🆕 DIAGNÓSTICOS POSITIVOS (evaluados PRIMERO)
+% ============================================
 
-% R-DIAG-0.5: DESAFINACIÓN SEVERA (RMS >= 100 cents = 1 semitono completo o más)
-% Se activa cuando el error es tan grande que indica problemas serios
-diagnostico(desafinacion_severa) :-
-    pitch_deviation_cents(X),
-    X >= 100.  % 1 semitono completo de error promedio
+% R-DIAG-001: Performance EXCELENTE (0-50 cents RMS + estable)
+diagnostico(performance_excelente_afinacion) :-
+    performance_excelente,
+    es_estable.
+
+% R-DIAG-002: Performance BUENA (50-100 cents RMS + estable)
+diagnostico(performance_buena_afinacion) :-
+    performance_buena,
+    es_estable.
+
+% R-DIAG-003: Performance REGULAR (100-150 cents RMS)
+diagnostico(performance_regular_afinacion) :-
+    performance_regular.
+
+% ============================================
+% DIAGNÓSTICOS DE PROBLEMAS
+% ============================================
+
+% R-DIAG-010: DESAFINACIÓN SERIA (150+ cents RMS)
+diagnostico(desafinacion_seria_detectada) :-
+    desafinacion_seria.
+
+% R-DIAG-011: DESAFINACIÓN GENERAL (OBSOLETO - preferimos diagnósticos específicos)
+% Esta regla está comentada para dar prioridad a diagnósticos graduados + estabilidad separada
+% diagnostico(desafinacion_general) :-
+%     performance_regular,
+%     \+ es_estable.
 
 % R-DIAG-1: Hipoafinación por falta de apoyo respiratorio
 diagnostico(hipoafinacion_soporte_respiratorio) :-
@@ -404,14 +462,14 @@ diagnostico(sesion_muy_corta) :-
     \+ esta_desafinado.  % Solo si no hay problemas técnicos
 
 % R-DIAG-22: Performance excelente (calidad técnica sin problemas)
-% IMPORTANTE: No incluye duración - la calidad vocal es independiente del tiempo de práctica
-diagnostico(excelente) :-
-    esta_afinado,
-    es_estable,
-    \+ vibrato_excesivo,
-    \+ timing_desfasado,
-    \+ dificultad_agudos,
-    \+ dificultad_graves.
+% NOTA: Esta regla está obsoleta - usar performance_excelente_afinacion en su lugar
+% diagnostico(excelente) :-
+%     esta_afinado,
+%     es_estable,
+%     \+ vibrato_excesivo,
+%     \+ timing_desfasado,
+%     \+ dificultad_agudos,
+%     \+ dificultad_graves.
 
 % R-DIAG-23: Performance excelente pero sesión corta (informativo)
 % Detecta cuando la calidad es excelente pero necesitamos más datos
@@ -464,14 +522,16 @@ severity_weight(timing_inconsistente_retrasado, 45).
 severity_weight(tension_vocal_generalizada, 95).
 severity_weight(falta_soporte_generalizado, 95).
 severity_weight(problema_passaggio, 55).
-severity_weight(desafinacion_severa, 100).        % 🆕 Máxima prioridad - error catastrófico
+severity_weight(desafinacion_seria_detectada, 100).  % 🆕 Máxima prioridad - >150 cents RMS
 severity_weight(desafinacion_general, 80).
 severity_weight(hipoafinacion_soporte_respiratorio, 70).
 severity_weight(hiperafinacion_tension_laringea, 70).
 severity_weight(participacion_insuficiente, 5).   % Muy baja prioridad (informativo)
 severity_weight(sesion_muy_corta, 3).             % Muy baja prioridad (informativo)
 severity_weight(excelente_sesion_corta, 1).       % Informativo - excelente pero corto
-severity_weight(excelente, 0).                    % Sin problemas
+severity_weight(performance_excelente_afinacion, 0).  % 🆕 Sin problemas - afinación excelente
+severity_weight(performance_buena_afinacion, 0).      % 🆕 Sin problemas - afinación buena
+severity_weight(performance_regular_afinacion, 1).    % 🆕 Leve - afinación regular
 
 /* ============================================
  * SECCIÓN 7: FUNCIONES AUXILIARES
@@ -670,15 +730,15 @@ recomendacion('🔄 Practica escalas que cruzan el passaggio lentamente') :-
 recomendacion('💪 Fortalece el "mix" con ejercicios de voz mixta') :-
     diagnostico(problema_passaggio).
 
-% R-RECOM-20: Performance excelente
-recomendacion('⭐ ¡Felicitaciones! Mantén tu rutina de práctica actual') :-
-    diagnostico(excelente).
-recomendacion('🎯 Desafíate con canciones de mayor dificultad') :-
-    diagnostico(excelente).
+% R-RECOM-20: Performance excelente (afinación excelente)
+recomendacion('⭐ ¡Felicitaciones! Mantu00e9n tu rutina de práctica actual') :-
+    diagnostico(performance_excelente_afinacion).
+recomendacion('🎯 Desáfiate con canciones de mayor dificultad') :-
+    diagnostico(performance_excelente_afinacion).
 recomendacion('🎤 Considera grabar covers para compartir tu progreso') :-
-    diagnostico(excelente).
+    diagnostico(performance_excelente_afinacion).
 recomendacion('📈 Sigue usando KOACH para mantener tu nivel') :-
-    diagnostico(excelente).
+    diagnostico(performance_excelente_afinacion).
 
 % R-RECOM-20b: Performance excelente en sesión corta
 recomendacion('⭐ ¡Excelente técnica vocal detectada!') :-

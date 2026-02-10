@@ -133,6 +133,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
         persistUser(data.user);
         return;
       }
+
+      // Si el token expiró (401/403), limpiar sesión
+      if (response.status === 401 || response.status === 403) {
+        console.log('[Auth] Token expirado o inválido, cerrando sesión');
+        setUser(null);
+        persistUser(null);
+        localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+        return;
+      }
     } catch (error) {
       if (process.env.NODE_ENV === 'development') {
         console.error('[Auth] Error validating session:', error);

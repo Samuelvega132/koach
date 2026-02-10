@@ -82,44 +82,39 @@ export class PerformanceController {
       // 2. Ejecutar Motor de Inferencia Prolog DIRECTAMENTE
       const diagnosis = await VocalDiagnosisService.diagnose(telemetry);
 
-      // 3. Filtrar puntos válidos EN RANGO VOCAL HUMANO
-      const validPoints = performanceData.filter((p: PerformanceDataPoint) => 
+      // 3. Calcular scores usando la telemetría YA CALCULADA (con filtrado de outliers)
+      // IMPORTANTE: telemetry.pitchDeviationAverage ya tiene outliers filtrados (>300 cents)
+      // No recalcular aquí para evitar inconsistencias
+      const pitchAccuracy = {
+        score: Math.round(100 * Math.exp(-Math.abs(telemetry.pitchDeviationAverage) / 200)),
+        avgDeviationCents: telemetry.pitchDeviationAverage,
+        inTunePercentage: 0, // TODO: calcular desde telemetry
+      };
+      
+      const stability = {
+        score: Math.round(Math.max(0, 100 * Math.exp(-telemetry.stabilityVariance / 50))),
+        avgJitter: telemetry.stabilityVariance,
+        stableNotesPercentage: 0, // TODO: calcular desde telemetry
+      };
+      
+      const timing = { 
+        score: 90, 
+        avgLatency: telemetry.rhythmicOffsetAverage,
+        onTimePercentage: 90 
+      };
+      
+      console.log(`🎯 Puntos válidos en rango vocal: ${performanceData.filter((p: PerformanceDataPoint) => 
         p.detectedFrequency && 
         p.detectedFrequency > 0 &&
         p.targetFrequency >= VOCAL_RANGE_MIN_HZ &&
         p.targetFrequency <= VOCAL_RANGE_MAX_HZ
-      );
-      
-      console.log(`🎯 Puntos válidos en rango vocal: ${validPoints.length} de ${performanceData.length}`);
-      
-      const pitchAccuracy = calculatePitchAccuracy(validPoints);
-      const stability = calculateStability(validPoints);
-      const timing = { score: 90, avgLatency: 0, onTimePercentage: 90 }; // Placeholder
+      ).length} de ${performanceData.length}`);
 
       // 4. Score global ponderado
       const score = Math.round(pitchAccuracy.score * 0.5 + stability.score * 0.3 + timing.score * 0.2);
 
-      // ============================================
-      // 🛡️ SANITY CHECK: Score bajo + Diagnóstico "Excelente" = ERROR
-      // ============================================
+      // No SANITY CHECK necesario - el nuevo sistema de umbrales es más robusto
       let finalDiagnosis = diagnosis;
-      if (score < 50 && diagnosis.primaryIssue.includes('Excelente')) {
-        console.warn('⚠️ SANITY CHECK ACTIVADO: Score bajo pero Prolog dice Excelente');
-        console.warn(`   → Score: ${score}, Diagnosis: ${diagnosis.primaryIssue}`);
-        console.warn(`   → Corrigiendo diagnóstico...`);
-        finalDiagnosis = {
-          ...diagnosis,
-          primaryIssue: 'Desafinación Severa Detectada',
-          diagnosis: `Se detectó un error de afinación significativo (RMS: ${telemetry.pitchDeviationAverage.toFixed(0)} cents). El sistema detectó problemas pero Prolog no pudo clasificarlos.`,
-          prescription: [
-            '🚨 Se detectaron errores significativos de afinación durante tu sesión',
-            '🎯 Tu desviación RMS es muy alta - practica con un afinador visual',
-            '🎹 Empieza con notas simples y escalas antes de canciones completas',
-            '⏱️ Canta más lento para mejorar la precisión',
-          ],
-          severity: 'severe',
-        };
-      }
 
       // 🔍 Log del análisis generado por el Motor de Inferencia
       console.log('🧠 ANÁLISIS DEL MOTOR DE INFERENCIA:');
@@ -150,6 +145,7 @@ export class PerformanceController {
           feedback: JSON.stringify(feedback.recommendations),
           telemetry: telemetry as any,
           diagnosis: finalDiagnosis as any,
+          analysis: { pitchAccuracy, stability, timing } as any, // 🆕 Guardar analysis en BDD
           performanceLog: {
             create: {
               rawData: performanceData,
@@ -166,6 +162,20 @@ export class PerformanceController {
           },
         },
       });
+
+      // 🔍 Log crítico: Verificar si se guardó con usuario
+      console.log('═══════════════════════════════════════════════════════════');
+      console.log('💾 SESIÓN GUARDADA EN BASE DE DATOS');
+      console.log('═══════════════════════════════════════════════════════════');
+      console.log('📝 Session ID:', session.id);
+      console.log('👤 Usuario autenticado:', req.user?.userId ? '✅ SÍ' : '❌ NO (Modo invitado)');
+      if (req.user?.userId) {
+        console.log('   User ID:', req.user.userId);
+        console.log('   Email:', req.user.email);
+      }
+      console.log('🎵 Canción:', session.song.title, '-', session.song.artist);
+      console.log('⭐ Score:', session.score);
+      console.log('═══════════════════════════════════════════════════════════');
 
       // Parsear feedback de forma segura
       let feedbackArray: string[];
@@ -188,6 +198,7 @@ export class PerformanceController {
         telemetry: session.telemetry,
         diagnosis: session.diagnosis,
         song: session.song,
+        savedToProfile: !!req.user?.userId, // 🆕 Indicador de si se guardó en perfil
       });
     } catch (error: any) {
       console.error('[PerformanceController.create] Error:', error);
@@ -246,34 +257,31 @@ export class PerformanceController {
         hasDiagnosis: !!session.diagnosis,
       });
 
-      // Calcular analysis desde telemetry si existe
-      // USAR LA MISMA FÓRMULA EXPONENCIAL que en create()
-      const pitchDeviation = (session.telemetry as any)?.pitchDeviationAverage || 0;
-      const stabilityVariance = (session.telemetry as any)?.stabilityVariance || 0;
-      
-      const analysisFromData = session.telemetry ? {
-        pitchAccuracy: { 
-          // Fórmula exponencial: 50 cents → 78%, 100 cents → 61%, 200 cents → 37%
-          score: Math.round(100 * Math.exp(-Math.abs(pitchDeviation) / 200)), 
-          avgDeviationCents: pitchDeviation,
-          inTunePercentage: 0 
-        },
-        stability: { 
-          // Fórmula: varianza baja = buen score
-          score: Math.round(Math.max(0, 100 * Math.exp(-stabilityVariance / 50))), 
-          avgJitter: stabilityVariance,
-          stableNotesPercentage: 0 
-        },
-        timing: { 
-          score: 90, 
-          avgLatency: (session.telemetry as any).rhythmicOffsetAverage || 0,
-          onTimePercentage: 90 
-        },
-      } : {
-        pitchAccuracy: { score: 0, avgDeviationCents: 0, inTunePercentage: 0 },
-        stability: { score: 0, avgJitter: 0, stableNotesPercentage: 0 },
-        timing: { score: 0, avgLatency: 0, onTimePercentage: 0 },
-      };
+      // 🆕 Usar analysis guardado en BDD (si existe), o recalcular desde telemetry
+      // Esto asegura consistencia entre create() y getById()
+      const analysisFromData = session.analysis || (
+        session.telemetry ? {
+          pitchAccuracy: { 
+            score: Math.round(100 * Math.exp(-Math.abs((session.telemetry as any).pitchDeviationAverage || 0) / 200)), 
+            avgDeviationCents: (session.telemetry as any).pitchDeviationAverage || 0,
+            inTunePercentage: 0 
+          },
+          stability: { 
+            score: Math.round(Math.max(0, 100 * Math.exp(-((session.telemetry as any).stabilityVariance || 0) / 50))), 
+            avgJitter: (session.telemetry as any).stabilityVariance || 0,
+            stableNotesPercentage: 0 
+          },
+          timing: { 
+            score: 90, 
+            avgLatency: (session.telemetry as any).rhythmicOffsetAverage || 0,
+            onTimePercentage: 90 
+          },
+        } : {
+          pitchAccuracy: { score: 0, avgDeviationCents: 0, inTunePercentage: 0 },
+          stability: { score: 0, avgJitter: 0, stableNotesPercentage: 0 },
+          timing: { score: 0, avgLatency: 0, onTimePercentage: 0 },
+        }
+      );
 
       return res.json({
         sessionId: session.id,

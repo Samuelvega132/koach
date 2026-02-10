@@ -32,6 +32,7 @@ import {
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { AuthModal } from '@/components/auth/AuthModal';
+import { Toast } from '@/components/ui/Toast';
 
 // Lazy load heavy chart component
 const PerformanceRadar = dynamic(
@@ -125,6 +126,9 @@ export default function ResultsPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
+    const [isSharing, setIsSharing] = useState(false);
+    const [toast, setToast] = useState<{ message: string; type: 'success' | 'warning' | 'error' } | null>(null);
 
     useEffect(() => {
         const fetchSession = async () => {
@@ -165,6 +169,173 @@ export default function ResultsPage() {
         }
     }, [params.sessionId]);
 
+    /**
+     * Maneja el compartir el análisis
+     * Usa Web Share API si está disponible, sino copia link al portapapeles
+     */
+    const handleShare = async () => {
+        setIsSharing(true);
+        
+        const shareUrl = window.location.href;
+        const shareTitle = `Mi análisis vocal - ${sessionData?.song.title}`;
+        const shareText = `🎤 Obtuve ${sessionData?.score} en "${sessionData?.song.title}" en KOACH!`;
+
+        try {
+            // Web Share API (mobile + algunos navegadores modernos)
+            if (navigator.share) {
+                await navigator.share({
+                    title: shareTitle,
+                    text: shareText,
+                    url: shareUrl,
+                });
+                setToast({ message: '¡Compartido exitosamente!', type: 'success' });
+            } else {
+                // Fallback: copiar al portapapeles
+                await navigator.clipboard.writeText(`${shareText}\n${shareUrl}`);
+                setToast({ message: 'Link copiado al portapapeles ✓', type: 'success' });
+            }
+        } catch (err) {
+            // Usuario canceló o error
+            if ((err as Error).name !== 'AbortError') {
+                setToast({ message: 'Error al compartir', type: 'error' });
+            }
+        } finally {
+            setIsSharing(false);
+        }
+    };
+
+    /**
+     * Exporta el análisis a PDF
+     * Usa html2canvas para capturar el contenido + jsPDF para generar el PDF
+     */
+    const handleExportPDF = async () => {
+        setIsExporting(true);
+        setToast({ message: 'Generando PDF... ⏳', type: 'warning' });
+
+        try {
+            // Importaciones dinámicas (code splitting)
+            const html2canvas = (await import('html2canvas')).default;
+            const jsPDF = (await import('jspdf')).default;
+
+            // Capturar el contenido principal
+            const mainContent = document.querySelector('main');
+            if (!mainContent) throw new Error('Contenido no encontrado');
+
+            // Ocultar temporalmente elementos no deseados (botones, etc)
+            const elementsToHide = document.querySelectorAll('[data-no-pdf]');
+            elementsToHide.forEach(el => (el as HTMLElement).style.visibility = 'hidden');
+
+            // 🔧 FIX: Agregar fondo blanco temporal para que el contenido sea visible
+            const originalBg = document.body.style.backgroundColor;
+            const originalMainBg = (mainContent as HTMLElement).style.backgroundColor;
+            document.body.style.backgroundColor = '#1a0b2e'; // Dark purple solid
+            (mainContent as HTMLElement).style.backgroundColor = '#1a0b2e';
+
+            // Scroll to top para capturar desde arriba
+            const originalScroll = window.scrollY;
+            window.scrollTo(0, 0);
+            await new Promise(resolve => setTimeout(resolve, 500)); // Wait for scroll + animations
+
+            // Captura con configuración optimizada para fondos oscuros
+            const canvas = await html2canvas(mainContent as HTMLElement, {
+                scale: 2,
+                backgroundColor: '#1a0b2e', // Dark purple background
+                logging: false,
+                useCORS: true,
+                allowTaint: true,
+                foreignObjectRendering: false, // Mejor compatibilidad
+                imageTimeout: 0,
+                removeContainer: true,
+                width: mainContent.scrollWidth,
+                height: mainContent.scrollHeight,
+                windowWidth: mainContent.scrollWidth,
+                windowHeight: mainContent.scrollHeight,
+                onclone: (clonedDoc) => {
+                    // 🔧 FIX: Forzar estilos en el DOM clonado para mejor visibilidad
+                    const clonedMain = clonedDoc.querySelector('main');
+                    if (clonedMain) {
+                        (clonedMain as HTMLElement).style.backgroundColor = '#1a0b2e';
+                        (clonedMain as HTMLElement).style.color = '#ffffff';
+                        
+                        // Remover blur effects que causan problemas
+                        clonedDoc.querySelectorAll('.backdrop-blur-md, .backdrop-blur-lg, .backdrop-blur-xl').forEach(el => {
+                            (el as HTMLElement).style.backdropFilter = 'none';
+                            (el as HTMLElement).style.webkitBackdropFilter = 'none';
+                        });
+                        
+                        // Forzar opacidad en glass panels
+                        clonedDoc.querySelectorAll('.glass-panel').forEach(el => {
+                            (el as HTMLElement).style.backgroundColor = 'rgba(30, 15, 50, 0.95)';
+                        });
+                    }
+                },
+            });
+
+            // Restaurar estilos originales
+            document.body.style.backgroundColor = originalBg;
+            (mainContent as HTMLElement).style.backgroundColor = originalMainBg;
+            window.scrollTo(0, originalScroll);
+            elementsToHide.forEach(el => (el as HTMLElement).style.visibility = '');
+
+            // Crear PDF (A4 portrait) con compresión
+            const pdf = new jsPDF('p', 'mm', 'a4', true);
+            const imgWidth = 210; // A4 width in mm
+            const pageHeight = 297; // A4 height in mm
+            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+            let heightLeft = imgHeight;
+            let position = 0;
+
+            // Comprimir imagen para reducir tamaño del PDF
+            const imgData = canvas.toDataURL('image/jpeg', 0.85); // JPEG con 85% calidad
+            
+            // Primera página
+            pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+            heightLeft -= pageHeight;
+
+            // Agregar páginas adicionales si el contenido es muy largo
+            while (heightLeft >= 0) {
+                position = heightLeft - imgHeight;
+                pdf.addPage();
+                pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+                heightLeft -= pageHeight;
+            }
+
+            // Agregar metadata
+            pdf.setProperties({
+                title: `Análisis Vocal - ${sessionData?.song.title}`,
+                subject: 'Análisis de Performance Vocal',
+                author: 'KOACH AI Vocal Coach',
+                keywords: 'vocal, análisis, performance, karaoke',
+                creator: 'KOACH Platform',
+            });
+
+            // Marca de agua en cada página (footer)
+            const totalPages = pdf.getNumberOfPages();
+            for (let i = 1; i <= totalPages; i++) {
+                pdf.setPage(i);
+                pdf.setFontSize(8);
+                pdf.setTextColor(150);
+                pdf.text(
+                    `KOACH - Intelligent Vocal Studio | Página ${i} de ${totalPages} | ${new Date().toLocaleDateString()}`,
+                    105,
+                    290,
+                    { align: 'center' }
+                );
+            }
+
+            // Descargar PDF
+            const filename = `KOACH-${sessionData?.song.title.replace(/[^a-zA-Z0-9]/g, '_')}-${sessionData?.score}pts-${new Date().toISOString().split('T')[0]}.pdf`;
+            pdf.save(filename);
+
+            setToast({ message: '✅ PDF descargado exitosamente', type: 'success' });
+        } catch (err) {
+            console.error('[Export PDF] Error:', err);
+            setToast({ message: '❌ Error al generar PDF', type: 'error' });
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
     if (loading) {
         return <ResultsPageSkeleton />;
     }
@@ -185,15 +356,15 @@ export default function ResultsPage() {
         );
     }
 
-    // Calculate scores for radar chart (with safe defaults)
-                // Usar los scores calculados correctamente por el backend
-                const pitchScore = sessionData?.analysis?.pitchAccuracy?.score ?? 0;
-                const rhythmScore = sessionData?.analysis?.timing?.score ?? 0;
-                const stabilityScore = sessionData?.analysis?.stability?.score ?? 0;
-                
-                // Tono: basado en la desviación RMS con curva exponencial (igual que backend)
-                const pitchDeviation = sessionData?.telemetry?.pitchDeviationAverage ?? 0;
-                const toneScore = Math.round(100 * Math.exp(-Math.abs(pitchDeviation) / 200));
+    // Calculate scores for radar chart
+    // 🆕 USAR SCORES DEL BACKEND (ya calculados con filtrado de outliers)
+    // NO recalcular aquí - causa inconsistencias entre UI y BDD
+    const pitchScore = sessionData?.analysis?.pitchAccuracy?.score ?? 0;
+    const stabilityScore = sessionData?.analysis?.stability?.score ?? 0;
+    const rhythmScore = sessionData?.analysis?.timing?.score ?? 0;
+    
+    // Tono y rango desde telemetry (para gráfica de radar)
+    const toneScore = pitchScore; // Mismo que pitch accuracy
     const notesAchieved = sessionData?.telemetry?.rangeCoverage?.notesAchieved?.length ?? 0;
     const notesMissed = sessionData?.telemetry?.rangeCoverage?.notesMissed?.length ?? 0;
     const totalNotes = notesAchieved + notesMissed;
@@ -217,14 +388,30 @@ export default function ResultsPage() {
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                        <button className="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-sm flex items-center gap-2 transition-all">
-                            <Share2 className="w-4 h-4" />
-                            Compartir
+                    <div className="flex items-center gap-2" data-no-pdf>
+                        <button 
+                            onClick={handleShare}
+                            disabled={isSharing}
+                            className="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-sm flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {isSharing ? (
+                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            ) : (
+                                <Share2 className="w-4 h-4" />
+                            )}
+                            {isSharing ? 'Compartiendo...' : 'Compartir'}
                         </button>
-                        <button className="px-4 py-2 rounded-full bg-purple-500 hover:bg-purple-600 text-white text-sm flex items-center gap-2 transition-all">
-                            <Download className="w-4 h-4" />
-                            Exportar PDF
+                        <button 
+                            onClick={handleExportPDF}
+                            disabled={isExporting}
+                            className="px-4 py-2 rounded-full bg-purple-500 hover:bg-purple-600 text-white text-sm flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {isExporting ? (
+                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            ) : (
+                                <Download className="w-4 h-4" />
+                            )}
+                            {isExporting ? 'Generando...' : 'Exportar PDF'}
                         </button>
                     </div>
                 </div>
@@ -569,6 +756,21 @@ export default function ResultsPage() {
                     </div>
                 </div>
             </main>
+
+            {/* Auth Modal */}
+            <AuthModal
+                isOpen={isAuthModalOpen}
+                onClose={() => setIsAuthModalOpen(false)}
+            />
+
+            {/* Toast Notifications */}
+            {toast && (
+                <Toast
+                    message={toast.message}
+                    type={toast.type}
+                    onClose={() => setToast(null)}
+                />
+            )}
         </div>
     );
 }

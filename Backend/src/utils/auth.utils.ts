@@ -19,7 +19,7 @@ export interface TokenPair {
 // CONSTANTES DE SEGURIDAD
 // ============================================
 const SALT_ROUNDS = 12; // Número de rondas para bcrypt (más seguro que 10)
-const ACCESS_TOKEN_EXPIRY = '15m'; // 15 minutos
+const ACCESS_TOKEN_EXPIRY = '24h'; // 24 horas (antes: 15m)
 const REFRESH_TOKEN_EXPIRY = '7d'; // 7 días
 
 // ============================================

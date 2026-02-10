@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/contexts/AuthContext";
 import { User, TrendingUp, Award, Target, BarChart3, Calendar, Music } from "lucide-react";
-import { ProfileHeader, StatsCard, VocalCard } from "@/components/profile";
+import { ProfileHeader, StatsCard, VocalCard, SessionCard } from "@/components/profile";
 import { VocalRangeResult, VoiceType } from "@/components/profile/VocalRangeWizard";
 import { API_CONFIG } from "@/config/api.config";
 
@@ -23,7 +23,22 @@ interface Session {
     title: string;
     artist: string;
   };
-  diagnosis?: any;
+  diagnosis?: {
+    primaryIssue?: string;
+    diagnosis?: string;
+    prescription?: string[];
+    severity?: string;
+  };
+  telemetry?: {
+    pitchDeviationAverage?: number;
+    stabilityPercentage?: number;
+    durationSeconds?: number;
+  };
+  analysis?: any;
+  feedback?: string;
+  performanceLog?: {
+    rawData?: any[];
+  };
 }
 
 export default function ProfilePage() {
@@ -35,12 +50,13 @@ export default function ProfilePage() {
 }
 
 function ProfileContent() {
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, logout } = useAuth();
   const [isSaving, setIsSaving] = useState(false);
   const [savedVocalRange, setSavedVocalRange] = useState<VocalRangeResult | null>(null);
   const [stats, setStats] = useState<UserStats | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoadingStats, setIsLoadingStats] = useState(true);
+  const [tokenExpired, setTokenExpired] = useState(false);
 
   // Convertir el user de la DB al formato VocalRangeResult cuando cambie
   useEffect(() => {
@@ -76,7 +92,11 @@ function ProfileContent() {
 
       try {
         const token = localStorage.getItem('koach_access_token');
-        if (!token) return;
+        if (!token) {
+          console.warn('[Profile] No hay token disponible');
+          setIsLoadingStats(false);
+          return;
+        }
 
         const response = await fetch(`${API_CONFIG.baseURL}/auth/me/stats`, {
           headers: {
@@ -88,9 +108,17 @@ function ProfileContent() {
           const data = await response.json();
           setStats(data);
           setSessions(data.recentSessions || []);
+        } else if (response.status === 401 || response.status === 403) {
+          console.error('[Profile] Token expirado o inválido');
+          // Mostrar mensaje al usuario de que debe volver a iniciar sesión
+          setTokenExpired(true);
+          setStats(null);
+          setSessions([]);
+        } else {
+          console.error('[Profile] Error al cargar estadísticas:', response.status);
         }
       } catch (error) {
-        console.error('Error al cargar estadísticas:', error);
+        console.error('[Profile] Error al cargar estadísticas:', error);
       } finally {
         setIsLoadingStats(false);
       }
@@ -145,7 +173,32 @@ function ProfileContent() {
   }, [isSaving, refreshUser]);
 
   if (!user) return null;
+// Mostrar mensaje de token expirado
+  if (tokenExpired) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="glass-panel p-8 rounded-xl border border-red-500/30 max-w-md text-center">
+          <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-4">
+            <Award className="w-8 h-8 text-red-400" />
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-3">
+            Sesión Expirada
+          </h2>
+          <p className="text-gray-400 mb-6 leading-relaxed">
+            Tu sesión ha expirado por seguridad. Por favor, cierra sesión y vuelve a iniciar sesión para continuar.
+          </p>
+          <button
+            onClick={logout}
+            className="w-full px-6 py-3 rounded-lg bg-gradient-to-r from-red-600 to-pink-600 text-white font-semibold hover:from-red-700 hover:to-pink-700 transition-all duration-200"
+          >
+            Cerrar Sesión
+          </button>
+        </div>
+      </div>
+    );
+  }
 
+  
   return (
     <div className="min-h-screen">
       {/* Header */}
@@ -196,39 +249,7 @@ function ProfileContent() {
         ) : sessions.length > 0 ? (
           <div className="space-y-4">
             {sessions.map((session) => (
-              <a
-                key={session.id}
-                href={`/results/${session.id}`}
-                className="block p-4 bg-white/5 hover:bg-white/10 rounded-lg transition-colors border border-white/10"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-full bg-purple-500/20 flex items-center justify-center">
-                      <Music className="w-6 h-6 text-purple-400" />
-                    </div>
-                    <div>
-                      <h3 className="text-white font-semibold">{session.song.title}</h3>
-                      <p className="text-sm text-gray-400">{session.song.artist}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className={`text-2xl font-bold ${
-                      session.score >= 80 ? 'text-green-400' :
-                      session.score >= 60 ? 'text-yellow-400' :
-                      'text-red-400'
-                    }`}>
-                      {session.score}%
-                    </p>
-                    <p className="text-xs text-gray-500 flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />
-                      {new Date(session.createdAt).toLocaleDateString('es-ES', { 
-                        day: 'numeric', 
-                        month: 'short' 
-                      })}
-                    </p>
-                  </div>
-                </div>
-              </a>
+              <SessionCard key={session.id} session={session} />
             ))}
             
             {stats && stats.totalSessions > 5 && (

@@ -33,28 +33,65 @@ const KNOWLEDGE_BASE_PRESCRIPTIONS: Record<string, {
   affectedRange: 'low' | 'mid' | 'high' | 'full';
 }> = {
   // ============================================
-  // 🆕 DIAGNÓSTICOS PRINCIPALES DE AFINACIÓN
+  // 🆕 DIAGNÓSTICOS POSITIVOS (excelentes resultados)
   // ============================================
-  desafinacion_severa: {
-    primaryIssue: 'Desafinación Severa',
-    diagnosis: 'Se detectó un error de afinación muy significativo (50+ cents RMS, más de medio semitono). Esto indica que las notas cantadas están muy lejos de las notas objetivo.',
+  performance_excelente_afinacion: {
+    primaryIssue: '¡Excelente Afinación!',
+    diagnosis: 'Tu afinación es sobresaliente (0-50 cents RMS de error). Mantienes las notas objetivo con Alta precisión y estabilidad. ¡Sigue así!',
     prescription: [
-      '🚨 ALERTA: Tu afinación presenta errores muy significativos',
-      '🎹 Empieza desde cero: practica escalas simples con un piano o afinador',
-      '🎧 Usa un afinador visual en tiempo real mientras cantas',
-      '⏱️ Canta MUY lento - la precisión es más importante que seguir la canción',
-      '🎯 Practica una sola nota a la vez hasta que esté perfectamente afinada',
+      '🎉 ¡Felicitaciones! Tu afinación es excelente para nivel amateur/intermedio',
+      '🎯 Mantén esta consistencia: practica regularmente para no perder el nivel',
+      '⬆️ Desafío: Intenta canciones más difíciles o rangos más amplios',
+      '🎵 Consejo: Trabaja en otros aspectos como expresión, dinámica y fraseo',
+    ],
+    affectedRange: 'full',
+  },
+  performance_buena_afinacion: {
+    primaryIssue: 'Buena Afinación',
+    diagnosis: 'Tu afinación es buena (50-100 cents RMS). Cantas dentro del rango aceptable con estabilidad. Pequeñas mejoras te llevarán al siguiente nivel.',
+    prescription: [
+      '👍 ¡Bien hecho! Tu afinación está en el rango aceptable',
+      '🎯 Para mejorar: Practica con un afinador visual para ajustar las notas más críticas',
+      '🎹 Ejercicio: Escalas lentas con piano de referencia (cada nota 4 segundos)',
+      '📈 Estás cerca del nivel excelente - sigue practicando',
+    ],
+    affectedRange: 'full',
+  },
+  performance_regular_afinacion: {
+    primaryIssue: 'Afinación Regular',
+    diagnosis: 'Tu afinación es aceptable pero necesita trabajo (100-150 cents RMS). Algunos pasajes presentan desviaciones perceptibles. Con práctica mejorarás significativamente.',
+    prescription: [
+      '📊 Tu afinación está en desarrollo - hay margen de mejora',
+      '🎹 Prioridad: Practica ejercicios de oído (repetir notas de un piano)',
+      '🎧 Herramienta: Usa un afinador mientras cantas para autocorregirte',
+      '⏱️ Técnica: Canta más lento hasta dominar cada nota, luego acelera',
+    ],
+    affectedRange: 'full',
+  },
+
+  // ============================================
+  // DIAGNÓSTICOS DE PROBLEMAS
+  // ============================================
+  desafinacion_seria_detectada: {
+    primaryIssue: 'Desafinación Significativa',
+    diagnosis: 'Se detectó un error de afinación considerable (150+ cents RMS, más de un semitono). Esto indica que las notas cantadas se alejan significativamente del objetivo.',
+    prescription: [
+      '🚨 Tu afinación requiere atención urgente',
+      '🎹 Fundamentos: Empieza con escalas simples con piano (Do-Re-Mi-Fa-Sol)',
+      '🎧 Afinador visual: Úsalo en TODAS tus prácticas hasta mejorar',
+      '⏱️ Canta MUY lento - no intentes seguir el tempo de la canción todavía',
+      '🎯 Una nota a la vez: Practica sostener cada nota afinada por 5 segundos',
     ],
     affectedRange: 'full',
   },
   desafinacion_general: {
-    primaryIssue: 'Desafinación Detectada',
-    diagnosis: 'El análisis detectó errores significativos de afinación durante tu sesión. La desviación RMS supera el umbral de percepción auditiva.',
+    primaryIssue: 'Afinación Inestable',
+    diagnosis: 'La afinación fluctúa entre pasajes. Algunos fragmentos están bien, pero hay inconsistencia general. Posible fatiga o falta de práctica.',
     prescription: [
-      '🎯 Problema Detectado: Tu afinación presenta errores significativos durante la sesión',
-      '🎹 Ejercicio: Practica intervalos simples (2das, 3ras) con piano de referencia',
-      '🎧 Usa un afinador visual mientras cantas para corregir en tiempo real',
-      '⏱️ Canta más lento: la precisión es más importante que la velocidad',
+      '📊 Tu afinación es inconsistente - algunos pasajes bien, otros no',
+      '🌬️ Respiración: Puede ser falta de soporte de aire - practica respiración diafragmática',
+      '🎹 Ejercicio: Notas largas sostenidas sin fluctuar (4-8 segundos cada una)',
+      '💪 Fortalece tu control vocal con ejercicios de apoyo abdominal',
     ],
     affectedRange: 'full',
   },
@@ -146,6 +183,18 @@ const KNOWLEDGE_BASE_PRESCRIPTIONS: Record<string, {
       '⏱️ Practica notas largas muy lentas (8+ segundos)',
     ],
     affectedRange: 'mid',
+  },
+  tremolo_control_aire: {
+    primaryIssue: 'Inestabilidad Vocal',
+    diagnosis: 'La voz fluctúa de manera inconsistente, indicando problemas de control de aire o soporte respiratorio. La varianza de estabilidad es muy alta.',
+    prescription: [
+      '🌬️ Prioridad: Trabaja soporte respiratorio diafragmático',
+      '💪 Ejercicio: Inhala 4 segundos, sostén 4, exhala 8 (sin cantar)',
+      '🎹 Practica notas sostenidas largas con afinador visual (objetivo: línea recta)',
+      '😌 Reduce tensión en cuello y hombros - la estabilidad viene del diafragma',
+      '⏱️ Empieza con 5 segundos por nota, aumenta gradualmente a 10-15 segundos',
+    ],
+    affectedRange: 'full',
   },
   vibrato_ausente: {
     primaryIssue: 'Vibrato Ausente',
@@ -319,12 +368,21 @@ const KNOWLEDGE_BASE_PRESCRIPTIONS: Record<string, {
 // PESOS DE SEVERIDAD (para priorización)
 // ============================================
 const SEVERITY_WEIGHTS: Record<string, number> = {
-  desafinacion_severa: 100,  // 🆕 Máxima prioridad - error catastrófico
-  desafinacion_general: 90,  // 🆕 Alta prioridad - error principal detectado
+  // 🆕 Diagnósticos positivos (no afectan severidad)
+  performance_excelente_afinacion: 0,
+  performance_buena_afinacion: 0,
+  performance_regular_afinacion: 1,
+  
+  // 🆕 Críticos con nuevos umbrales
+  desafinacion_seria_detectada: 100,  // 🆕 >150 cents - error catastrófico
+  desafinacion_general: 2,  // 🆕 OBSOLETO - reducido drásticamente, preferir diagnósticos específicos
+  
+  // Diagnósticos de problemas
   fatiga_vocal: 10,
   voz_calada: 9,
   tension_vocal: 8,
   tecnica_deficiente: 8,
+  tremolo_control_aire: 7,  // 🆕 Diagnóstico de estabilidad independiente
   hipoafinacion_sistematica: 7,
   hiperafinacion_sistematica: 7,
   hipoafinacion_soporte_respiratorio: 7,
@@ -343,7 +401,6 @@ const SEVERITY_WEIGHTS: Record<string, number> = {
   participacion_insuficiente: 2,  // Baja prioridad - informativo
   excelente_sesion_corta: 1,      // Informativo - excelente pero corto
   sesion_muy_corta: 1,            // Muy baja prioridad - informativo
-  excelente: 0,
 };
 
 /**
@@ -604,13 +661,21 @@ export class VocalDiagnosisService {
    * Determina la severidad global basada en los diagnósticos
    */
   private static determineSeverity(diagnoses: string[]): 'mild' | 'moderate' | 'severe' {
-    if (diagnoses.length === 0 || (diagnoses.length === 1 && diagnoses[0] === 'excelente')) {
+    if (diagnoses.length === 0) {
+      return 'mild';
+    }
+
+    // Diagnósticos positivos siempre son 'mild'
+    const firstDiagnosis = diagnoses[0];
+    if (firstDiagnosis.includes('performance_excelente') || 
+        firstDiagnosis.includes('performance_buena') ||
+        firstDiagnosis.includes('performance_regular')) {
       return 'mild';
     }
 
     const maxWeight = Math.max(...diagnoses.map(d => SEVERITY_WEIGHTS[d] ?? 1));
 
-    if (maxWeight >= 8) return 'severe';
+    if (maxWeight >= 9) return 'severe';
     if (maxWeight >= 5) return 'moderate';
     return 'mild';
   }

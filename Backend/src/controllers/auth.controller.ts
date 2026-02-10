@@ -347,10 +347,19 @@ export async function getUserStats(
         id: true,
         score: true,
         createdAt: true,
+        diagnosis: true,
+        telemetry: true,
+        analysis: true,
+        feedback: true,
         song: {
           select: {
             title: true,
             artist: true,
+          },
+        },
+        performanceLog: {
+          select: {
+            rawData: true,
           },
         },
       },
@@ -367,7 +376,7 @@ export async function getUserStats(
       totalSessions,
       bestScore,
       averageScore,
-      recentSessions: sessions.slice(0, 5), // Últimas 5 sesiones
+      recentSessions: sessions.slice(0, 5), // Últimas 5 sesiones con todos los datos
     });
   } catch (error) {
     console.error('[AUTH] Error al obtener estadísticas:', error);

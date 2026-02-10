@@ -14,6 +14,7 @@ import { useSessionTelemetry } from '@/hooks/useSessionTelemetry';
 import { Play, Pause, Mic, LogOut, RotateCcw, MicOff, CheckCircle } from 'lucide-react';
 import Link from 'next/link';
 import { clsx } from "clsx";
+import { Toast } from '@/components/ui/Toast';
 
 interface StudioClientProps {
     song: Song;
@@ -56,6 +57,7 @@ export const StudioClient = ({ song }: StudioClientProps) => {
     const [userPitchDisplay, setUserPitchDisplay] = useState<number | null>(null);
     const [isRecording, setIsRecording] = useState<boolean>(false);
     const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false); // 🆕 Estado de análisis
+    const [showToast, setShowToast] = useState<{ message: string; type: 'success' | 'warning' } | null>(null);
 
     // CRITICAL: RAF loop for UI updates (decoupled from audio processing)
     const rafRef = useRef<number>();
@@ -196,11 +198,25 @@ export const StudioClient = ({ song }: StudioClientProps) => {
             console.log('📋 Primeros 5 puntos:', payload.performanceData.slice(0, 5));
             console.log('════════════════════════════════════════════════════════════');
 
+            // 🔐 Incluir token de autenticación si está disponible
+            const token = typeof window !== 'undefined' 
+                ? localStorage.getItem('koach_access_token') 
+                : null;
+
+            const headers: HeadersInit = {
+                'Content-Type': 'application/json',
+            };
+
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+                console.log('🔐 Token incluido en la petición');
+            } else {
+                console.log('⚠️ Sin token (modo invitado)');
+            }
+
             const response = await fetch(url, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers,
                 body: JSON.stringify(payload),
             });
 
@@ -211,9 +227,22 @@ export const StudioClient = ({ song }: StudioClientProps) => {
 
             const data = await response.json();
 
+            // 🆕 Mostrar notificación según si se guardó en perfil
+            if (data.savedToProfile) {
+                setShowToast({
+                    message: '✅ Sesión guardada en tu perfil. ¡Revísala en /profile!',
+                    type: 'success'
+                });
+            } else {
+                setShowToast({
+                    message: '⚠️ Sesión en modo invitado (no guardada). Inicia sesión para guardar tu progreso.',
+                    type: 'warning'
+                });
+            }
+
             // ⚠️ DELAY MÍNIMO: Da tiempo al usuario a ver el spinner (UX de "robustez")
             // El backend ya está procesando, pero visualmente damos sensación de análisis profundo
-            await new Promise(resolve => setTimeout(resolve, 1500));
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Aumentado para ver el toast
 
             // Navigate to results page
             window.location.href = `/results/${data.sessionId}`;
@@ -401,7 +430,15 @@ export const StudioClient = ({ song }: StudioClientProps) => {
                     </div>
                 </div>
             </div>
-        </div>
+            {/* Toast de Notificación */}
+            {showToast && (
+                <Toast
+                    message={showToast.message}
+                    type={showToast.type}
+                    duration={4000}
+                    onClose={() => setShowToast(null)}
+                />
+            )}        </div>
     );
 };
 

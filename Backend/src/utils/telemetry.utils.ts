@@ -156,14 +156,24 @@ export function calculateSessionTelemetry(
  */
 function calculatePitchMetrics(data: PerformanceDataPoint[]) {
     const SHARP_FLAT_THRESHOLD_CENTS = 25; // Umbral profesional
+    const OUTLIER_THRESHOLD_CENTS = 300; // 🆕 Filtro de outliers (3 semitonos)
     const deviations: number[] = [];
     let sharpCount = 0;
     let flatCount = 0;
+    let outliersFiltered = 0;
 
     data.forEach(point => {
         if (!point.detectedFrequency) return;
 
         const cents = frequencyToCents(point.detectedFrequency, point.targetFrequency);
+        
+        // 🆕 FILTRO DE OUTLIERS: Ignorar datos absurdos (>300 cents = 3 semitonos)
+        // Estos son probablemente errores de detección, no errores del cantante
+        if (Math.abs(cents) > OUTLIER_THRESHOLD_CENTS) {
+            outliersFiltered++;
+            return; // Ignorar este punto
+        }
+        
         deviations.push(cents);
 
         if (cents > SHARP_FLAT_THRESHOLD_CENTS) sharpCount++;
@@ -172,12 +182,17 @@ function calculatePitchMetrics(data: PerformanceDataPoint[]) {
 
     // Guard: prevenir división por cero
     if (deviations.length === 0) {
+        console.warn('⚠️ [PITCH METRICS] No hay puntos válidos después del filtrado');
         return {
             pitchDeviationAverage: 0,
             pitchDeviationStdDev: 0,
             sharpNotesCount: 0,
             flatNotesCount: 0,
         };
+    }
+    
+    if (outliersFiltered > 0) {
+        console.log(`🔍 [PITCH METRICS] ${outliersFiltered} outliers filtrados (>${OUTLIER_THRESHOLD_CENTS} cents)`);
     }
     
     // ⚠️ CORRECCIÓN CRÍTICA: Usar RMS en lugar de promedio algebraico
@@ -194,7 +209,9 @@ function calculatePitchMetrics(data: PerformanceDataPoint[]) {
     const pitchDeviationStdDev = Math.sqrt(variance);
 
     console.log('🎵 [PITCH METRICS DEBUG]:', {
-        totalPoints: deviations.length,
+        totalPointsAnalyzed: data.length,
+        validPointsAfterFilter: deviations.length,
+        outliersRemoved: outliersFiltered,
         rms: pitchDeviationRMS.toFixed(2) + ' cents (error absoluto)',
         bias: pitchDeviationBias.toFixed(2) + ' cents (tendencia direccional)',
         stddev: pitchDeviationStdDev.toFixed(2) + ' cents',

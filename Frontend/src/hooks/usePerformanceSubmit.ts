@@ -28,6 +28,7 @@ interface UsePerformanceSubmitOptions {
   songId: string;
   userName?: string;
   minValidPoints?: number;
+  onSuccess?: (savedToProfile: boolean) => void; // 🆕 Callback para notificar
 }
 
 interface UsePerformanceSubmitReturn {
@@ -44,6 +45,7 @@ export const usePerformanceSubmit = ({
   songId,
   userName = 'Usuario Demo',
   minValidPoints = 10,
+  onSuccess, // 🆕
 }: UsePerformanceSubmitOptions): UsePerformanceSubmitReturn => {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -121,6 +123,17 @@ export const usePerformanceSubmit = ({
           console.log('[PerformanceSubmit] Success:', data.sessionId);
         }
 
+        // 🆕 Log visual para el usuario
+        if (data.savedToProfile) {
+          console.log('✅ SESIÓN GUARDADA EN TU PERFIL');
+          console.log('📊 Puedes verla en: /profile');
+          onSuccess?.(true);
+        } else {
+          console.log('⚠️ Sesión en modo invitado (no guardada en perfil)');
+          console.log('💡 Inicia sesión para guardar tu progreso');
+          onSuccess?.(false);
+        }
+
         // Navigate to results page
         router.push(`/results/${data.sessionId}`);
       } catch (err) {
@@ -134,7 +147,7 @@ export const usePerformanceSubmit = ({
         setIsSubmitting(false);
       }
     },
-    [songId, userName, minValidPoints, router]
+    [songId, userName, minValidPoints, router, onSuccess]
   );
 
   return {
