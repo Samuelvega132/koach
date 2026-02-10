@@ -233,3 +233,211 @@ export async function getCurrentUser(
     });
   }
 }
+
+/**
+ * PATCH /auth/me/vocal-range
+ * Guarda el resultado del VocalRangeWizard en el perfil del usuario
+ * 
+ * Headers: Authorization: Bearer <accessToken>
+ * Body: { 
+ *   vocalRange: "C3 - G5", 
+ *   voiceType: "baritone",
+ *   lowestNote: "C3",
+ *   highestNote: "G5",
+ *   comfortableRange: ["E3", "E5"],
+ *   vocalRangeSemitones: 29
+ * }
+ * Returns: { user }
+ */
+export async function updateVocalRange(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    // Verificar autenticación
+    if (!req.user) {
+      res.status(401).json({
+        error: 'Unauthorized',
+        message: 'Usuario no autenticado',
+      });
+      return;
+    }
+
+    const { 
+      vocalRange, 
+      voiceType,
+      lowestNote,
+      highestNote,
+      comfortableRange,
+      vocalRangeSemitones
+    } = req.body;
+
+    // Validación básica - ahora acepta campos parciales
+    if (!vocalRange && !voiceType && !lowestNote && !highestNote) {
+      res.status(400).json({
+        error: 'Bad Request',
+        message: 'Se requiere al menos vocalRange, voiceType, lowestNote o highestNote',
+      });
+      return;
+    }
+
+    // Construir objeto de actualización solo con campos presentes
+    const updateData: {
+      vocalRange?: string;
+      voiceType?: string;
+      lowestNote?: string;
+      highestNote?: string;
+      comfortableRange?: [string, string];
+      vocalRangeSemitones?: number;
+    } = {};
+
+    if (vocalRange) updateData.vocalRange = vocalRange;
+    if (voiceType) updateData.voiceType = voiceType;
+    if (lowestNote) updateData.lowestNote = lowestNote;
+    if (highestNote) updateData.highestNote = highestNote;
+    if (comfortableRange) updateData.comfortableRange = comfortableRange;
+    if (vocalRangeSemitones !== undefined) updateData.vocalRangeSemitones = vocalRangeSemitones;
+
+    // Actualizar perfil vocal
+    const updatedUser = await prisma.user.update({
+      where: { id: req.user.userId },
+      data: updateData,
+    });
+
+    console.log(`✅ Vocal range actualizado para usuario ${req.user.userId}:`, updateData);
+
+    // Devolver usuario sanitizado
+    res.status(200).json({
+      user: toUserDto(updatedUser),
+    });
+  } catch (error) {
+    console.error('[AUTH] Error al actualizar vocal range:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Error al guardar rango vocal',
+    });
+  }
+}
+
+/**
+ * GET /auth/me/stats
+ * Obtiene estadísticas del usuario (sesiones, promedios, etc.)
+ * 
+ * Headers: Authorization: Bearer <accessToken>
+ * Returns: { totalSessions, bestScore, averageScore, recentSessions }
+ */
+export async function getUserStats(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    if (!req.user) {
+      res.status(401).json({
+        error: 'Unauthorized',
+        message: 'Usuario no autenticado',
+      });
+      return;
+    }
+
+    // Obtener todas las sesiones del usuario
+    const sessions = await prisma.session.findMany({
+      where: { userId: req.user.userId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        score: true,
+        createdAt: true,
+        song: {
+          select: {
+            title: true,
+            artist: true,
+          },
+        },
+      },
+    });
+
+    // Calcular estadísticas
+    const totalSessions = sessions.length;
+    const bestScore = totalSessions > 0 ? Math.max(...sessions.map(s => s.score)) : 0;
+    const averageScore = totalSessions > 0
+      ? Math.round(sessions.reduce((sum, s) => sum + s.score, 0) / totalSessions)
+      : 0;
+
+    res.status(200).json({
+      totalSessions,
+      bestScore,
+      averageScore,
+      recentSessions: sessions.slice(0, 5), // Últimas 5 sesiones
+    });
+  } catch (error) {
+    console.error('[AUTH] Error al obtener estadísticas:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Error al obtener estadísticas',
+    });
+  }
+}
+
+/**
+ * GET /auth/me/sessions
+ * Obtiene el historial de sesiones del usuario
+ * 
+ * Headers: Authorization: Bearer <accessToken>
+ * Query: ?limit=10&offset=0
+ * Returns: { sessions, total }
+ */
+export async function getUserSessions(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    if (!req.user) {
+      res.status(401).json({
+        error: 'Unauthorized',
+        message: 'Usuario no autenticado',
+      });
+      return;
+    }
+
+    const limit = parseInt(req.query.limit as string) || 10;
+    const offset = parseInt(req.query.offset as string) || 0;
+
+    // Obtener sesiones con paginación
+    const [sessions, total] = await Promise.all([
+      prisma.session.findMany({
+        where: { userId: req.user.userId },
+        orderBy: { createdAt: 'desc' },
+        skip: offset,
+        take: limit,
+        select: {
+          id: true,
+          score: true,
+          createdAt: true,
+          diagnosis: true,
+          song: {
+            select: {
+              title: true,
+              artist: true,
+            },
+          },
+        },
+      }),
+      prisma.session.count({
+        where: { userId: req.user.userId },
+      }),
+    ]);
+
+    res.status(200).json({
+      sessions,
+      total,
+      limit,
+      offset,
+    });
+  } catch (error) {
+    console.error('[AUTH] Error al obtener sesiones:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Error al obtener sesiones',
+    });
+  }
+}

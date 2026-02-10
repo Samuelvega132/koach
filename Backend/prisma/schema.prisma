@@ -47,7 +47,8 @@ model Song {
 model Session {
   id       String @id @default(uuid())
   songId   String
-  userName String // Nombre del usuario (sin autenticación por ahora)
+  userName String // Nombre del usuario (compatibilidad legacy)
+  userId   String? // 🆕 Relación con usuario autenticado (opcional)
   score    Int // Puntaje final (0-100) calculado por Sistema Experto
   feedback String @db.Text // Retroalimentación textual generada
 
@@ -67,8 +68,10 @@ model Session {
 
   // Relaciones
   song           Song            @relation(fields: [songId], references: [id], onDelete: Cascade)
+  user           User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
   performanceLog PerformanceLog?
 
+  @@index([userId])
   @@map("sessions")
 }
 
@@ -82,10 +85,20 @@ model User {
   passwordHash String
   firstName    String
   lastName     String
+  
+  // 🆕 VOCAL PROFILE - Datos del test de rango vocal
+  vocalRange       String?  // ej: "C3 - G5" (rango completo)
+  voiceType        String?  // ej: "baritone", "soprano", "tenor"
+  lowestNote       String?  // Nota más grave detectada
+  highestNote      String?  // Nota más aguda detectada  
+  comfortableRange Json?    // [nota_baja, nota_alta] del rango cómodo
+  vocalRangeSemitones Int?  // Rango en semitonos
+  
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   // Relaciones
+  sessions        Session[]       // 🆕 Sesiones del usuario
   performanceLogs PerformanceLog[]
 
   @@index([email])

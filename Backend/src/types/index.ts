@@ -74,6 +74,8 @@ export interface SessionTelemetry {
   // Cobertura de Rango
   rangeCoverage: {
     notesMissed: string[];              // Notas que fallaron (ej: ["C5", "D5"])
+    notesMissedHigh: number;            // Cantidad de notas agudas falladas (>= C4)
+    notesMissedLow: number;             // Cantidad de notas graves falladas (< C4)
     notesAchieved: string[];            // Notas cantadas exitosamente
     lowestNote: string;                 // Nota más grave intentada
     highestNote: string;                // Nota más aguda intentada
@@ -96,6 +98,7 @@ export interface VocalDiagnosis {
   prescription: string[];               // Ejercicios específicos recomendados
   severity: 'mild' | 'moderate' | 'severe'; // Severidad del problema
   affectedRange: 'low' | 'mid' | 'high' | 'full'; // Rango vocal afectado
+  allDiagnoses?: string[];              // Lista completa de diagnósticos detectados por Prolog
 }
 
 

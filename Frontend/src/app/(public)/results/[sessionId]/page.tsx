@@ -25,7 +25,9 @@ import {
     Music2,
     Timer,
     Activity,
-    Keyboard
+    Keyboard,
+    Trophy,
+    CheckCircle
 } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
@@ -74,6 +76,7 @@ interface VocalDiagnosis {
     prescription: string[];
     severity: 'mild' | 'moderate' | 'severe';
     affectedRange: 'low' | 'mid' | 'high' | 'full';
+    allDiagnoses?: string[]; // Lista completa de diagnósticos de Prolog
 }
 
 interface SessionData {
@@ -91,6 +94,28 @@ interface SessionData {
         title: string;
         artist: string;
     };
+}
+
+/**
+ * Detecta si el diagnóstico indica una performance excelente
+ * basándose en la respuesta del Motor Prolog
+ */
+function isExcellentPerformance(diagnosis: VocalDiagnosis): boolean {
+    const excellentIndicators = [
+        'salud vocal óptima',
+        'excelente',
+        'impecable',
+        'óptima',
+        'sin problemas',
+        'sin anomalías',
+    ];
+    
+    const primaryLower = diagnosis.primaryIssue.toLowerCase();
+    const diagnosisLower = diagnosis.diagnosis.toLowerCase();
+    
+    return excellentIndicators.some(indicator => 
+        primaryLower.includes(indicator) || diagnosisLower.includes(indicator)
+    );
 }
 
 export default function ResultsPage() {
@@ -161,15 +186,21 @@ export default function ResultsPage() {
     }
 
     // Calculate scores for radar chart (with safe defaults)
-    const pitchScore = sessionData?.analysis?.pitchAccuracy?.score ?? 0;
-    const rhythmScore = sessionData?.analysis?.timing?.score ?? 0;
-    const stabilityScore = sessionData?.analysis?.stability?.score ?? 0;
-    const toneScore = Math.max(0, 100 - Math.abs(sessionData?.telemetry?.pitchDeviationAverage ?? 0) * 2);
-    
+                // Usar los scores calculados correctamente por el backend
+                const pitchScore = sessionData?.analysis?.pitchAccuracy?.score ?? 0;
+                const rhythmScore = sessionData?.analysis?.timing?.score ?? 0;
+                const stabilityScore = sessionData?.analysis?.stability?.score ?? 0;
+                
+                // Tono: basado en la desviación RMS con curva exponencial (igual que backend)
+                const pitchDeviation = sessionData?.telemetry?.pitchDeviationAverage ?? 0;
+                const toneScore = Math.round(100 * Math.exp(-Math.abs(pitchDeviation) / 200));
     const notesAchieved = sessionData?.telemetry?.rangeCoverage?.notesAchieved?.length ?? 0;
     const notesMissed = sessionData?.telemetry?.rangeCoverage?.notesMissed?.length ?? 0;
     const totalNotes = notesAchieved + notesMissed;
     const rangeScore = totalNotes > 0 ? (notesAchieved / totalNotes) * 100 : 0;
+
+    // Detectar si es una performance excelente (Happy Path)
+    const isExcellent = sessionData.diagnosis ? isExcellentPerformance(sessionData.diagnosis) : false;
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-black">
@@ -201,10 +232,37 @@ export default function ResultsPage() {
 
             {/* Main Content */}
             <main className="container mx-auto px-6 py-8">
-                {/* Score Overview */}
-                <div className="glass-panel p-8 rounded-xl mb-8 text-center border border-purple-500/30">
-                    <h2 className="text-6xl font-bold text-white mb-2">{sessionData.score}</h2>
-                    <p className="text-xl text-purple-400">Puntuación Global</p>
+                {/* Score Overview - Adaptive styling based on performance */}
+                <div className={`glass-panel p-8 rounded-xl mb-8 text-center border ${
+                    isExcellent 
+                        ? 'border-teal-500/50 bg-gradient-to-br from-teal-500/10 to-green-500/10' 
+                        : 'border-purple-500/30'
+                }`}>
+                    {/* Excellence Badge */}
+                    {isExcellent && (
+                        <div className="flex items-center justify-center gap-2 mb-4">
+                            <span className="px-4 py-1.5 rounded-full bg-gradient-to-r from-teal-500 to-green-500 text-white text-sm font-bold flex items-center gap-2 shadow-lg shadow-teal-500/25">
+                                <Trophy className="w-4 h-4" />
+                                Ejecución Impecable
+                            </span>
+                        </div>
+                    )}
+                    
+                    <h2 className={`text-6xl font-bold mb-2 ${
+                        isExcellent ? 'text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-green-400' : 'text-white'
+                    }`}>{sessionData.score}</h2>
+                    <p className={`text-xl ${isExcellent ? 'text-teal-400' : 'text-purple-400'}`}>
+                        Puntuación Global
+                    </p>
+                    
+                    {/* Excellence Message */}
+                    {isExcellent && (
+                        <p className="mt-3 text-gray-300 flex items-center justify-center gap-2">
+                            <CheckCircle className="w-5 h-5 text-teal-400" />
+                            No se detectaron anomalías técnicas
+                        </p>
+                    )}
+                    
                     <div className="mt-4 flex items-center justify-center gap-4 text-sm text-gray-400">
                         <span className="flex items-center gap-1">
                             <Clock className="w-4 h-4" />
@@ -316,28 +374,83 @@ export default function ResultsPage() {
                     <DiagnosisCard diagnosis={sessionData.diagnosis} />
                 </div>
 
-                {/* Prescription Card */}
-                <div className="mb-8">
-                    <PrescriptionCard prescription={sessionData.diagnosis.prescription} />
-                </div>
-
-                {/* Feedback & Recommendations */}
-                {sessionData.feedback && sessionData.feedback.length > 0 && (
-                    <div className="glass-panel p-8 rounded-xl mb-8 border border-blue-500/30">
-                        <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
-                            <Lightbulb className="w-6 h-6 text-blue-400" />
-                            Recomendaciones del Sistema Experto
+                {/* All Diagnoses Detected - New Section */}
+                {sessionData.diagnosis.allDiagnoses && sessionData.diagnosis.allDiagnoses.length > 0 && (
+                    <div className="glass-panel p-8 rounded-xl mb-8 border border-orange-500/30">
+                        <h2 className="text-2xl font-bold text-white mb-4 flex items-center gap-2">
+                            <Target className="w-6 h-6 text-orange-400" />
+                            Análisis Completo del Sistema Experto
                         </h2>
-                        <div className="space-y-3">
-                            {sessionData.feedback.map((item, index) => (
-                                <div key={index} className="flex items-start gap-3 p-3 bg-white/5 rounded-lg hover:bg-white/10 transition-colors">
-                                    <span className="text-2xl flex-shrink-0">{index + 1}</span>
-                                    <p className="text-gray-300 leading-relaxed">{item}</p>
-                                </div>
-                            ))}
+                        <p className="text-gray-400 mb-6 text-sm">
+                            El motor Prolog detectó {sessionData.diagnosis.allDiagnoses.length} patrón(es) en tu interpretación:
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {sessionData.diagnosis.allDiagnoses.map((diag, index) => {
+                                const diagLower = diag.toLowerCase();
+                                const isSevere = diagLower.includes('severa') || diagLower.includes('severe');
+                                const isModerate = diagLower.includes('moderada') || diagLower.includes('moderate');
+                                const isPitch = diagLower.includes('afinacion') || diagLower.includes('pitch') || diagLower.includes('desafinacion');
+                                const isStability = diagLower.includes('tremolo') || diagLower.includes('vibrato') || diagLower.includes('estabilidad');
+                                const isRange = diagLower.includes('rango') || diagLower.includes('range') || diagLower.includes('registro');
+                                const isTiming = diagLower.includes('timing') || diagLower.includes('anticipacion') || diagLower.includes('retras');
+                                
+                                let bgColor = 'bg-gray-500/20';
+                                let borderColor = 'border-gray-500/30';
+                                let textColor = 'text-gray-300';
+                                let icon = '🔍';
+                                
+                                if (isSevere) {
+                                    bgColor = 'bg-red-500/20';
+                                    borderColor = 'border-red-500/30';
+                                    textColor = 'text-red-300';
+                                    icon = '🚨';
+                                } else if (isModerate) {
+                                    bgColor = 'bg-yellow-500/20';
+                                    borderColor = 'border-yellow-500/30';
+                                    textColor = 'text-yellow-300';
+                                    icon = '⚠️';
+                                } else if (isPitch) {
+                                    bgColor = 'bg-purple-500/20';
+                                    borderColor = 'border-purple-500/30';
+                                    textColor = 'text-purple-300';
+                                    icon = '🎵';
+                                } else if (isStability) {
+                                    bgColor = 'bg-blue-500/20';
+                                    borderColor = 'border-blue-500/30';
+                                    textColor = 'text-blue-300';
+                                    icon = '📊';
+                                } else if (isRange) {
+                                    bgColor = 'bg-green-500/20';
+                                    borderColor = 'border-green-500/30';
+                                    textColor = 'text-green-300';
+                                    icon = '🎼';
+                                } else if (isTiming) {
+                                    bgColor = 'bg-orange-500/20';
+                                    borderColor = 'border-orange-500/30';
+                                    textColor = 'text-orange-300';
+                                    icon = '⏱️';
+                                }
+                                
+                                return (
+                                    <div 
+                                        key={index}
+                                        className={`p-3 rounded-lg border ${bgColor} ${borderColor} transition-all hover:scale-105`}
+                                    >
+                                        <span className="text-lg mr-2">{icon}</span>
+                                        <span className={`text-sm font-medium ${textColor}`}>
+                                            {diag.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                        </span>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 )}
+
+                {/* Prescription Card - Única sección de recomendaciones */}
+                <div className="mb-8">
+                    <PrescriptionCard prescription={sessionData.diagnosis.prescription} />
+                </div>
 
                 {/* Detailed Metrics */}
                 <div className="glass-panel p-8 rounded-xl border border-white/10">

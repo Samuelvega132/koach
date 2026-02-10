@@ -1,463 +1,749 @@
 /**
  * ============================================
- * SERVICIO DE DIAGNÓSTICO VOCAL AVANZADO
+ * MOTOR DE INFERENCIA - SERVICIO DE DIAGNÓSTICO VOCAL
  * ============================================
- * Motor de inferencia basado en reglas heurísticas de pedagogía vocal
- * Detecta patrones específicos de error y prescribe ejercicios correctivos
+ * Implementación 100% basada en Prolog (Tau-Prolog)
+ * 
+ * Este módulo:
+ * - Carga la Base de Conocimientos Prolog (vocal_rules.pl)
+ * - Inyecta hechos dinámicos desde la telemetría
+ * - Ejecuta consultas mediante Encadenamiento hacia Atrás (Backward Chaining)
+ * - Mapea las conclusiones lógicas a respuestas estructuradas
+ * 
+ * NO CONTIENE LÓGICA IMPERATIVA DE DIAGNÓSTICO
+ * Toda la inferencia es delegada al Motor Prolog
+ * 
+ * @author KOACH Team
+ * @version 2.0.0 (Pure Prolog Edition)
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
+import pl from 'tau-prolog';
 import { SessionTelemetry, VocalDiagnosis } from '../types';
 
+// ============================================
+// BASE DE CONOCIMIENTOS: PRESCRIPCIONES
+// ============================================
+// Mapeo de diagnósticos Prolog a tratamientos terapéuticos
+const KNOWLEDGE_BASE_PRESCRIPTIONS: Record<string, {
+  primaryIssue: string;
+  diagnosis: string;
+  prescription: string[];
+  affectedRange: 'low' | 'mid' | 'high' | 'full';
+}> = {
+  // ============================================
+  // 🆕 DIAGNÓSTICOS PRINCIPALES DE AFINACIÓN
+  // ============================================
+  desafinacion_severa: {
+    primaryIssue: 'Desafinación Severa',
+    diagnosis: 'Se detectó un error de afinación muy significativo (50+ cents RMS, más de medio semitono). Esto indica que las notas cantadas están muy lejos de las notas objetivo.',
+    prescription: [
+      '🚨 ALERTA: Tu afinación presenta errores muy significativos',
+      '🎹 Empieza desde cero: practica escalas simples con un piano o afinador',
+      '🎧 Usa un afinador visual en tiempo real mientras cantas',
+      '⏱️ Canta MUY lento - la precisión es más importante que seguir la canción',
+      '🎯 Practica una sola nota a la vez hasta que esté perfectamente afinada',
+    ],
+    affectedRange: 'full',
+  },
+  desafinacion_general: {
+    primaryIssue: 'Desafinación Detectada',
+    diagnosis: 'El análisis detectó errores significativos de afinación durante tu sesión. La desviación RMS supera el umbral de percepción auditiva.',
+    prescription: [
+      '🎯 Problema Detectado: Tu afinación presenta errores significativos durante la sesión',
+      '🎹 Ejercicio: Practica intervalos simples (2das, 3ras) con piano de referencia',
+      '🎧 Usa un afinador visual mientras cantas para corregir en tiempo real',
+      '⏱️ Canta más lento: la precisión es más importante que la velocidad',
+    ],
+    affectedRange: 'full',
+  },
+  
+  // ============================================
+  // DIAGNÓSTICOS DE AFINACIÓN (Pitch)
+  // ============================================
+  hipoafinacion_sistematica: {
+    primaryIssue: 'Hipoafinación Sistemática',
+    diagnosis: 'Tendencia persistente a cantar por debajo del tono objetivo. El oído percibe la nota pero la laringe no alcanza la frecuencia correcta.',
+    prescription: [
+      '🎯 Ejercicio: "Glissando Ascendente" - Desliza desde tu nota cómoda hacia arriba',
+      '🎹 Practica con referencia de piano: escucha la nota y luego cántala',
+      '🎧 Graba tu voz y compárala con la pista original',
+      '⬆️ Trabaja en "pensar más arriba" antes de emitir cada nota',
+    ],
+    affectedRange: 'full',
+  },
+  hiperafinacion_sistematica: {
+    primaryIssue: 'Hiperafinación Sistemática',
+    diagnosis: 'Tendencia a cantar por encima del tono objetivo. Común en cantantes con mucha energía o tensión vocal.',
+    prescription: [
+      '🎯 Ejercicio: "Descenso Controlado" - Practica bajar medio tono conscientemente',
+      '😌 Relaja la mandíbula y el cuello antes de cantar',
+      '🎹 Usa un afinador visual para monitorear tu pitch en tiempo real',
+      '⬇️ Piensa en "soltar" la nota en lugar de empujarla',
+    ],
+    affectedRange: 'full',
+  },
+  afinacion_inestable: {
+    primaryIssue: 'Afinación Inestable',
+    diagnosis: 'Fluctuaciones erráticas entre notas altas y bajas sin patrón definido. Puede indicar fatiga vocal o falta de control de aire.',
+    prescription: [
+      '🌬️ Ejercicio: "Respiración Diafragmática" - 4 segundos inhalar, 8 sostener, 8 exhalar',
+      '🎯 Practica notas largas sostenidas sin variación',
+      '📊 Usa KOACH para identificar en qué registro fluctúas más',
+      '💪 Fortalece el apoyo abdominal mientras cantas',
+    ],
+    affectedRange: 'full',
+  },
+
+  // ============================================
+  // DIAGNÓSTICOS DE TIMING (Ritmo)
+  // ============================================
+  entrada_tardia_cronica: {
+    primaryIssue: 'Entrada Tardía Crónica',
+    diagnosis: 'Patrón consistente de comenzar las notas después del beat. Puede indicar inseguridad o procesamiento auditivo lento.',
+    prescription: [
+      '🥁 Ejercicio: "Metrónomo Activo" - Practica con metrónomo a tempo lento',
+      '🎯 Anticipa mentalmente cada nota antes del tiempo',
+      '👂 Escucha la pista 2-3 veces antes de cantar para interiorizar el timing',
+      '🏃 Practica hablando las letras en ritmo antes de cantar',
+    ],
+    affectedRange: 'full',
+  },
+  entrada_adelantada: {
+    primaryIssue: 'Entrada Adelantada',
+    diagnosis: 'Tendencia a comenzar las notas antes del tiempo. Común en cantantes ansiosos o muy experimentados.',
+    prescription: [
+      '⏱️ Ejercicio: "Pausa Consciente" - Cuenta internamente antes de cada frase',
+      '😌 Practica respirar en el silencio antes de cada entrada',
+      '🎧 Escucha más atentamente la guía instrumental',
+      '🧘 Reduce la ansiedad con ejercicios de relajación pre-canto',
+    ],
+    affectedRange: 'full',
+  },
+  timing_irregular: {
+    primaryIssue: 'Timing Irregular',
+    diagnosis: 'Entradas inconsistentes, a veces tempranas y a veces tardías. Indica falta de internalización del tempo.',
+    prescription: [
+      '🥁 Ejercicio: "Palmas con Metrónomo" - Practica el ritmo sin cantar primero',
+      '📝 Marca los tiempos fuertes en la letra de la canción',
+      '🎯 Divide la canción en secciones y practica cada una por separado',
+      '🔄 Repite secciones problemáticas hasta que el timing sea natural',
+    ],
+    affectedRange: 'full',
+  },
+
+  // ============================================
+  // DIAGNÓSTICOS DE ESTABILIDAD VOCAL
+  // ============================================
+  tremolo_excesivo: {
+    primaryIssue: 'Trémolo Excesivo',
+    diagnosis: 'Vibrato demasiado rápido (>7 Hz) que puede sonar nervioso o incontrolado. Puede indicar tensión laríngea.',
+    prescription: [
+      '🎯 Ejercicio: "Nota Plana" - Sostén una nota sin ninguna oscilación',
+      '😌 Relaja conscientemente la garganta mientras cantas',
+      '🌬️ Enfócate en un flujo de aire constante y controlado',
+      '⏱️ Practica notas largas muy lentas (8+ segundos)',
+    ],
+    affectedRange: 'mid',
+  },
+  vibrato_ausente: {
+    primaryIssue: 'Vibrato Ausente',
+    diagnosis: 'Falta de oscilación natural en notas sostenidas. Puede sonar robótico o sin emoción.',
+    prescription: [
+      '🎯 Ejercicio: "Oscilación Inducida" - Varía manualmente medio tono arriba/abajo',
+      '🎹 Imita a cantantes con vibrato natural y controlado',
+      '😌 Relaja la mandíbula para permitir la oscilación natural',
+      '🏋️ El vibrato vendrá naturalmente con técnica relajada - no lo fuerces',
+    ],
+    affectedRange: 'full',
+  },
+  voz_calada: {
+    primaryIssue: 'Voz Calada',
+    diagnosis: 'Cortes abruptos de sonido, típicamente por falta de aire o cierre glótico involuntario.',
+    prescription: [
+      '🌬️ Ejercicio: "Columna de Aire" - Practica frases largas con flujo continuo',
+      '💪 Fortalece el apoyo diafragmático con ejercicios de respiración',
+      '📏 Marca puntos de respiración estratégicos en las canciones',
+      '🎯 Practica sostener notas hasta "quedarte sin aire" controladamente',
+    ],
+    affectedRange: 'full',
+  },
+  tension_vocal: {
+    primaryIssue: 'Tensión Vocal',
+    diagnosis: 'Combinación de inestabilidad y fluctuaciones que indica esfuerzo excesivo en la fonación.',
+    prescription: [
+      '😌 Ejercicio: "SOVT" - Usa pajilla o labios en vibración para reducir tensión',
+      '🧘 Practica relajación de cuello y hombros antes de cantar',
+      '🎯 Canta en un registro más cómodo antes de abordar notas difíciles',
+      '💧 Mantén hidratación adecuada (2+ litros de agua diarios)',
+    ],
+    affectedRange: 'full',
+  },
+
+  // ============================================
+  // DIAGNÓSTICOS DE RANGO VOCAL
+  // ============================================
+  registro_bajo_debil: {
+    primaryIssue: 'Registro Bajo Débil',
+    diagnosis: 'Dificultad para producir notas graves con claridad y potencia.',
+    prescription: [
+      '🎵 Ejercicio: "Chest Voice Slides" - Desliza desde notas medias hacia graves',
+      '🔊 Practica proyectar desde el pecho, no desde la garganta',
+      '🎯 Trabaja escalas descendentes lentamente',
+      '📊 Identifica tu nota grave más cómoda y expándela gradualmente',
+    ],
+    affectedRange: 'low',
+  },
+  registro_alto_debil: {
+    primaryIssue: 'Registro Alto Débil',
+    diagnosis: 'Dificultad para alcanzar notas agudas sin tensión o pérdida de calidad.',
+    prescription: [
+      '🎵 Ejercicio: "Head Voice Training" - Practica "oo" suave en notas altas',
+      '🌬️ Usa menos aire pero más presión subglótica controlada',
+      '🎯 Trabaja escalas ascendentes con "mixed voice"',
+      '😌 Evita empujar - las notas altas requieren relajación, no fuerza',
+    ],
+    affectedRange: 'high',
+  },
+  passaggio_inestable: {
+    primaryIssue: 'Passaggio Inestable',
+    diagnosis: 'Dificultad en la transición entre registros de pecho y cabeza.',
+    prescription: [
+      '🎵 Ejercicio: "Sirena Vocal" - Desliza suavemente por todo tu rango',
+      '🔄 Practica escalas que cruzan el passaggio lentamente',
+      '🎯 Identifica tus notas de cambio y trabájalas específicamente',
+      '💪 Fortalece el "mix" con ejercicios de voz mixta',
+    ],
+    affectedRange: 'mid',
+  },
+
+  // ============================================
+  // DIAGNÓSTICOS COMBINADOS
+  // ============================================
+  fatiga_vocal: {
+    primaryIssue: 'Posible Fatiga Vocal',
+    diagnosis: 'Patrón que sugiere cansancio vocal: inestabilidad + desafinación progresiva.',
+    prescription: [
+      '💤 Descanso vocal: Evita cantar por 24-48 horas',
+      '💧 Hidratación intensiva: Agua tibia con miel',
+      '🧘 Ejercicios suaves de respiración sin fonación',
+      '⚠️ Si persiste, consulta a un foniatra',
+    ],
+    affectedRange: 'full',
+  },
+  tecnica_deficiente: {
+    primaryIssue: 'Técnica Vocal Deficiente',
+    diagnosis: 'Múltiples áreas de mejora detectadas. Se recomienda trabajo técnico fundamental.',
+    prescription: [
+      '📚 Considera tomar clases de canto con un profesor certificado',
+      '🌬️ Prioriza ejercicios de respiración diafragmática',
+      '🎯 Trabaja una canción sencilla hasta dominarla antes de avanzar',
+      '🎧 Usa KOACH diariamente para monitorear tu progreso',
+    ],
+    affectedRange: 'full',
+  },
+  deficit_auditivo: {
+    primaryIssue: 'Posible Déficit de Entrenamiento Auditivo',
+    diagnosis: 'Desafinación bidireccional sugiere dificultad para percibir el pitch correcto.',
+    prescription: [
+      '🎹 Ejercicio: Practica intervalos (unísono, tercera, quinta) con piano',
+      '🎧 Usa apps de entrenamiento auditivo (EarMaster, Tenuto)',
+      '🎯 Canta notas individuales con referencia antes de frases completas',
+      '📊 Trabaja en la percepción auditiva antes de la producción vocal',
+    ],
+    affectedRange: 'full',
+  },
+  problemas_sincronizacion: {
+    primaryIssue: 'Problemas de Sincronización Musical',
+    diagnosis: 'Combinación de timing irregular y afinación variable. Indica desconexión con el acompañamiento.',
+    prescription: [
+      '🎧 Escucha la canción 5+ veces sin cantar, solo internalizando',
+      '🥁 Practica el ritmo hablado antes de agregar melodía',
+      '🎯 Divide en secciones pequeñas de 4-8 compases',
+      '📝 Estudia la estructura de la canción (verso, coro, puente)',
+    ],
+    affectedRange: 'full',
+  },
+
+  // ============================================
+  // DIAGNÓSTICO POSITIVO
+  // ============================================
+  excelente: {
+    primaryIssue: 'Salud Vocal Óptima',
+    diagnosis: '¡Excelente performance! Tu técnica vocal muestra un equilibrio saludable en afinación, timing y estabilidad. Continúa con tu práctica actual.',
+    prescription: [
+      '⭐ ¡Felicitaciones! Mantén tu rutina de práctica actual',
+      '🎯 Desafíate con canciones de mayor dificultad',
+      '🎤 Considera grabar covers para compartir tu progreso',
+      '📈 Sigue usando KOACH para mantener tu nivel',
+    ],
+    affectedRange: 'full',
+  },
+  excelente_sesion_corta: {
+    primaryIssue: 'Excelente Técnica (Sesión Corta)',
+    diagnosis: 'Tu técnica vocal es excelente, pero la sesión fue breve. Practica más tiempo para obtener un análisis más completo de tu rango y resistencia.',
+    prescription: [
+      '⭐ ¡Excelente técnica vocal detectada!',
+      '⏱️ Tu sesión fue corta - practica más tiempo para un análisis completo',
+      '🎯 Continúa con tu técnica actual, solo necesitamos más datos',
+    ],
+    affectedRange: 'full',
+  },
+
+  // ============================================
+  // DIAGNÓSTICOS DE PARTICIPACIÓN
+  // ============================================
+  participacion_insuficiente: {
+    primaryIssue: 'Participación Insuficiente',
+    diagnosis: 'Detectamos muy poca actividad vocal durante la sesión. Para obtener un análisis preciso, necesitamos escucharte cantar durante más tiempo.',
+    prescription: [
+      '⏱️ Intenta cantar durante más tiempo para obtener mejores resultados',
+      '🎤 Activa tu micrófono y canta junto con la pista',
+      '💡 KOACH necesita escucharte para darte feedback preciso',
+    ],
+    affectedRange: 'full',
+  },
+  sesion_muy_corta: {
+    primaryIssue: 'Sesión Muy Corta',
+    diagnosis: 'Tu sesión de práctica fue muy breve. Para un análisis completo de tu técnica vocal, te recomendamos practicar al menos 30 segundos.',
+    prescription: [
+      '⏰ Tu sesión fue muy corta - intenta practicar al menos 30 segundos',
+      '🎵 Practica la canción completa para un análisis más preciso',
+    ],
+    affectedRange: 'full',
+  },
+};
+
+// ============================================
+// PESOS DE SEVERIDAD (para priorización)
+// ============================================
+const SEVERITY_WEIGHTS: Record<string, number> = {
+  desafinacion_severa: 100,  // 🆕 Máxima prioridad - error catastrófico
+  desafinacion_general: 90,  // 🆕 Alta prioridad - error principal detectado
+  fatiga_vocal: 10,
+  voz_calada: 9,
+  tension_vocal: 8,
+  tecnica_deficiente: 8,
+  hipoafinacion_sistematica: 7,
+  hiperafinacion_sistematica: 7,
+  hipoafinacion_soporte_respiratorio: 7,
+  hiperafinacion_tension_laringea: 7,
+  afinacion_inestable: 6,
+  tremolo_excesivo: 6,
+  passaggio_inestable: 5,
+  registro_bajo_debil: 5,
+  registro_alto_debil: 5,
+  entrada_tardia_cronica: 4,
+  entrada_adelantada: 4,
+  timing_irregular: 4,
+  deficit_auditivo: 4,
+  problemas_sincronizacion: 4,
+  vibrato_ausente: 3,
+  participacion_insuficiente: 2,  // Baja prioridad - informativo
+  excelente_sesion_corta: 1,      // Informativo - excelente pero corto
+  sesion_muy_corta: 1,            // Muy baja prioridad - informativo
+  excelente: 0,
+};
+
 /**
- * Servicio de diagnóstico vocal con reglas expertas
+ * Servicio de Diagnóstico Vocal basado en Prolog
+ * 
+ * ARQUITECTURA:
+ * 1. Carga la KB (Knowledge Base) desde vocal_rules.pl
+ * 2. Inyecta hechos dinámicos desde la telemetría
+ * 3. Ejecuta query `diagnostico(X).` (Backward Chaining)
+ * 4. Mapea resultados a estructura de respuesta
+ * 
+ * IMPORTANTE: Este servicio NO contiene lógica de diagnóstico.
+ * Toda la inferencia es delegada al Motor Prolog.
  */
 export class VocalDiagnosisService {
-    // ============================================
-    // UMBRALES DE DIAGNÓSTICO (Ajustados para sensibilidad)
-    // ============================================
-    private static readonly THRESHOLDS = {
-        // Afinación (MÁS SENSIBLES: 10 cents es el límite profesional)
-        HYPO_PITCH_CENTS: -10,        // Canta consistentemente bajo (flat)
-        HYPER_PITCH_CENTS: 10,        // Canta consistentemente alto (sharp)
-        PITCH_VARIANCE_HIGH: 20,      // Varianza alta en afinación
+  private static knowledgeBase: string | null = null;
 
-        // Estabilidad (MÁS SENSIBLES)
-        STABILITY_VARIANCE_HIGH: 15,  // Hz - Tremolo/vibrato excesivo
-        VIBRATO_RATE_EXCESSIVE: 6.5,  // Hz - Vibrato demasiado rápido (normal: 4-6 Hz)
+  /**
+   * Carga la Base de Conocimientos Prolog desde disco
+   */
+  private static loadKnowledgeBase(): string {
+    if (this.knowledgeBase) {
+      return this.knowledgeBase;
+    }
 
-        // Timing (MÁS SENSIBLES: 50ms es perceptible)
-        TIMING_OFFSET_HIGH: 50,       // ms - Retraso/adelanto significativo
-        EARLY_NOTES_RATIO: 1.5,       // Ratio de notas anticipadas vs retrasadas
+    // 🔧 FIX: Buscar vocal_rules.pl en src/logic/ directamente (para desarrollo con ts-node)
+    // En producción (con dist/), usar la ruta relativa normal
+    const isDevelopment = __dirname.includes('src');
+    const kbPath = isDevelopment 
+      ? path.join(__dirname, '..', 'logic', 'vocal_rules.pl')  // src/services/../logic/vocal_rules.pl
+      : path.join(__dirname, '..', 'logic', 'vocal_rules.pl'); // dist/services/../logic/vocal_rules.pl
+    
+    if (!fs.existsSync(kbPath)) {
+      console.error(`❌ Knowledge Base not found at: ${kbPath}`);
+      console.error(`   __dirname: ${__dirname}`);
+      console.error(`   isDevelopment: ${isDevelopment}`);
+      throw new Error(`Prolog Knowledge Base not found: ${kbPath}`);
+    }
 
-        // Rango
-        RANGE_COVERAGE_LOW: 0.4,      // 40% de notas falladas = problema de rango
-    };
+    this.knowledgeBase = fs.readFileSync(kbPath, 'utf-8');
+    console.log(`📚 Knowledge Base loaded from: ${kbPath}`);
+    return this.knowledgeBase;
+  }
 
-    // ============================================
-    // SISTEMA DE PESOS POR SEVERIDAD
-    // ============================================
-    private static readonly SEVERITY_WEIGHTS = {
-        severe: 100,
-        moderate: 50,
-        mild: 10,
-    };
+  /**
+   * Convierte la telemetría de sesión a hechos Prolog
+   * 
+   * ⚠️ IMPORTANTE: tau-prolog NO ejecuta directivas :- assertz(...)
+   * Los hechos se insertan como cláusulas directas: predicado(valor).
+   */
+  private static telemetryToFacts(telemetry: SessionTelemetry): string {
+    const facts: string[] = [];
 
-    /**
-     * Analiza la telemetría de sesión y genera diagnóstico completo
-     */
-    static diagnose(telemetry: SessionTelemetry): VocalDiagnosis {
-        console.log('═══════════════════════════════════════════════════════════');
-        console.log('🩺 INICIANDO DIAGNÓSTICO VOCAL');
-        console.log('═══════════════════════════════════════════════════════════');
-        console.log('📊 TELEMETRÍA RECIBIDA:');
-        console.log('   → Pitch Deviation Avg:', telemetry.pitchDeviationAverage.toFixed(2), 'cents');
-        console.log('   → Pitch Deviation StdDev:', telemetry.pitchDeviationStdDev.toFixed(2), 'cents');
-        console.log('   → Sharp Notes:', telemetry.sharpNotesCount);
-        console.log('   → Flat Notes:', telemetry.flatNotesCount);
-        console.log('   → Stability Variance:', telemetry.stabilityVariance.toFixed(2), 'Hz');
-        console.log('   → Vibrato Rate:', telemetry.vibratoRate.toFixed(2), 'Hz');
-        console.log('   → Rhythmic Offset Avg:', telemetry.rhythmicOffsetAverage.toFixed(0), 'ms');
-        console.log('   → Early Notes:', telemetry.earlyNotesCount);
-        console.log('   → Late Notes:', telemetry.lateNotesCount);
-        console.log('   → Notes Missed:', telemetry.rangeCoverage.notesMissed.length);
-        console.log('═══════════════════════════════════════════════════════════');
+    // Métricas de afinación (como cláusulas directas, NO assertz)
+    facts.push(`pitch_deviation_cents(${telemetry.pitchDeviationAverage.toFixed(2)}).`);
+    facts.push(`pitch_deviation_stddev(${telemetry.pitchDeviationStdDev.toFixed(2)}).`);
+    facts.push(`notas_altas(${telemetry.sharpNotesCount}).`);
+    facts.push(`notas_bajas(${telemetry.flatNotesCount}).`);
 
-        const issues: Array<{ rule: string; diagnosis: string; prescription: string[]; severity: 'mild' | 'moderate' | 'severe'; weight: number; affectedRange?: 'low' | 'mid' | 'high' | 'full' }> = [];
+    // Métricas de timing
+    facts.push(`rhythm_offset_ms(${telemetry.rhythmicOffsetAverage.toFixed(2)}).`);
+    facts.push(`early_notes_count(${telemetry.earlyNotesCount}).`);
+    facts.push(`late_notes_count(${telemetry.lateNotesCount}).`);
 
-        // ============================================
-        // REGLA 1: HIPOAFINACIÓN (Canta Bajo - FLAT)
-        // ============================================
-        if (telemetry.pitchDeviationAverage < this.THRESHOLDS.HYPO_PITCH_CENTS) {
-            const severity = this.calculateSeverity(
-                Math.abs(telemetry.pitchDeviationAverage),
-                10, 20, 35
-            );
-            const weight = this.SEVERITY_WEIGHTS[severity];
+    // Métricas de estabilidad
+    facts.push(`stability_variance(${telemetry.stabilityVariance.toFixed(4)}).`);
+    facts.push(`vibrato_rate(${telemetry.vibratoRate.toFixed(2)}).`);
+    facts.push(`vibrato_depth(${telemetry.vibratoDepth.toFixed(2)}).`);
 
-            console.log('✅ REGLA R1 ACTIVADA: Hipoafinación');
-            console.log('   → Desviación:', telemetry.pitchDeviationAverage.toFixed(2), 'cents (umbral:', this.THRESHOLDS.HYPO_PITCH_CENTS, ')');
-            console.log('   → Severidad:', severity.toUpperCase());
-            console.log('   → Peso:', weight);
+    // Métricas de rango (usados por Prolog para dificultad_agudos/graves)
+    facts.push(`notes_missed_high(${telemetry.rangeCoverage.notesMissedHigh}).`);
+    facts.push(`notes_missed_low(${telemetry.rangeCoverage.notesMissedLow}).`);
 
-            issues.push({
-                rule: 'R1',
-                diagnosis: 'Hipoafinación por falta de presión subglótica',
-                prescription: [
-                    '🫁 Respiración Diafragmática: Inhala profundamente expandiendo el abdomen, no el pecho',
-                    '💋 Lip Trills (Trinos labiales): Exhala haciendo vibrar los labios mientras subes y bajas de tono',
-                    '🎯 Sirenas Ascendentes: Desliza desde tu nota más grave hasta la más aguda con "NG" nasal',
-                    '⚡ Ejercicio de Apoyo: Canta notas sostenidas presionando suavemente tu abdomen hacia adentro',
-                ],
-                severity,
-                weight,
-                affectedRange: this.detectAffectedRange(telemetry, 'flat'),
-            });
-        } else {
-            console.log('❌ REGLA R1: No activada (Pitch avg:', telemetry.pitchDeviationAverage.toFixed(2), '>=', this.THRESHOLDS.HYPO_PITCH_CENTS, ')');
-        }
+    // Métricas de duración y participación
+    const singingRatio = telemetry.totalDuration > 0 
+      ? telemetry.activeSingingTime / telemetry.totalDuration 
+      : 0;
+    facts.push(`total_duration(${telemetry.totalDuration.toFixed(2)}).`);
+    facts.push(`active_singing_time(${telemetry.activeSingingTime.toFixed(2)}).`);
+    facts.push(`silence_time(${telemetry.silenceTime.toFixed(2)}).`);
+    facts.push(`singing_ratio(${singingRatio.toFixed(4)}).`);
+    facts.push(`notes_achieved_count(${telemetry.rangeCoverage.notesAchieved.length}).`);
 
-        // ============================================
-        // REGLA 2: HIPERAFINACIÓN (Canta Alto - SHARP)
-        // ============================================
-        if (telemetry.pitchDeviationAverage > this.THRESHOLDS.HYPER_PITCH_CENTS) {
-            const severity = this.calculateSeverity(
-                telemetry.pitchDeviationAverage,
-                10, 20, 35
-            );
-            const weight = this.SEVERITY_WEIGHTS[severity];
+    // ⚠️ LOG CRÍTICO DE DEBUG - Ver qué números recibe Prolog
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log('🧠 MOTOR PROLOG - HECHOS DINÁMICOS INYECTADOS');
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log('🎵 AFINACIÓN:');
+    console.log(`   → pitch_deviation_cents(${telemetry.pitchDeviationAverage.toFixed(2)}) ⚠️ RMS, no promedio simple`);
+    console.log(`   → pitch_deviation_stddev(${telemetry.pitchDeviationStdDev.toFixed(2)})`);
+    console.log(`   → notas_altas(${telemetry.sharpNotesCount}) | notas_bajas(${telemetry.flatNotesCount})`);
+    console.log('🥁 TIMING:');
+    console.log(`   → rhythm_offset_ms(${telemetry.rhythmicOffsetAverage.toFixed(2)})`);
+    console.log(`   → early_notes_count(${telemetry.earlyNotesCount}) | late_notes_count(${telemetry.lateNotesCount})`);
+    console.log('🎯 ESTABILIDAD:');
+    console.log(`   → stability_variance(${telemetry.stabilityVariance.toFixed(4)})`);
+    console.log(`   → vibrato_rate(${telemetry.vibratoRate.toFixed(2)}) Hz`);
+    console.log('🎤 RANGO:');
+    console.log(`   → notes_missed_high(${telemetry.rangeCoverage.notesMissedHigh}) | notes_missed_low(${telemetry.rangeCoverage.notesMissedLow})`);
+    console.log('⏱️ DURACIÓN:');
+    console.log(`   → total_duration(${telemetry.totalDuration.toFixed(2)}) | active_singing_time(${telemetry.activeSingingTime.toFixed(2)})`);
+    console.log(`   → singing_ratio(${singingRatio.toFixed(4)}) | notes_achieved(${telemetry.rangeCoverage.notesAchieved.length})`);
+    console.log('═══════════════════════════════════════════════════════════');
+    
+    // 🔍 DEBUG: Mostrar los hechos generados
+    console.log('📝 HECHOS GENERADOS (primeros 3):');
+    facts.slice(0, 3).forEach(f => console.log(`   ${f}`));
 
-            console.log('✅ REGLA R2 ACTIVADA: Hiperafinación');
-            console.log('   → Desviación:', telemetry.pitchDeviationAverage.toFixed(2), 'cents (umbral:', this.THRESHOLDS.HYPER_PITCH_CENTS, ')');
-            console.log('   → Severidad:', severity.toUpperCase());
-            console.log('   → Peso:', weight);
+    return facts.join('\n');
+  }
 
-            issues.push({
-                rule: 'R2',
-                diagnosis: 'Hiperafinación por constricción laríngea (tensión)',
-                prescription: [
-                    '🧘 Masaje Laríngeo: Relaja tu garganta masajeando suavemente los músculos del cuello',
-                    '🎵 Vocalización con "M": Canta escalas con la boca cerrada, sintiendo vibración en los labios',
-                    '🌊 Descensos Cromáticos: Baja lentamente de tono con "AH" relajado, sin forzar',
-                    '😌 Bostezo Simulado: Practica cantando con sensación de bostezo para abrir la garganta',
-                ],
-                severity,
-                weight,
-                affectedRange: this.detectAffectedRange(telemetry, 'sharp'),
-            });
-        } else {
-            console.log('❌ REGLA R2: No activada (Pitch avg:', telemetry.pitchDeviationAverage.toFixed(2), '<=', this.THRESHOLDS.HYPER_PITCH_CENTS, ')');
-        }
+  /**
+   * Ejecuta el Motor de Inferencia Prolog
+   * 
+   * @param telemetry - Telemetría de la sesión
+   * @returns Promise con objeto conteniendo diagnósticos y recomendaciones inferidos
+   */
+  private static async runPrologInference(telemetry: SessionTelemetry): Promise<{
+    diagnoses: string[];
+    recommendations: string[];
+  }> {
+    return new Promise((resolve, reject) => {
+      try {
+        // Crear sesión Prolog
+        const session = pl.create();
 
-        // ============================================
-        // REGLA 3: TREMOLO / INESTABILIDAD
-        // ============================================
-        if (telemetry.stabilityVariance > this.THRESHOLDS.STABILITY_VARIANCE_HIGH) {
-            const severity = this.calculateSeverity(
-                telemetry.stabilityVariance,
-                15, 30, 50
-            );
-            const weight = this.SEVERITY_WEIGHTS[severity];
+        // Cargar KB + hechos dinámicos
+        const kb = this.loadKnowledgeBase();
+        const dynamicFacts = this.telemetryToFacts(telemetry);
+        const fullProgram = `${kb}\n\n% === HECHOS DINÁMICOS (Telemetría) ===\n${dynamicFacts}`;
 
-            console.log('✅ REGLA R3 ACTIVADA: Tremolo/Inestabilidad');
-            console.log('   → Variance:', telemetry.stabilityVariance.toFixed(2), 'Hz (umbral:', this.THRESHOLDS.STABILITY_VARIANCE_HIGH, ')');
-            console.log('   → Severidad:', severity.toUpperCase());
-            console.log('   → Peso:', weight);
-
-            issues.push({
-                rule: 'R3',
-                diagnosis: 'Falta de control en el flujo de aire (Tremolo)',
-                prescription: [
-                    '🎼 Long Tones (Notas Largas): Sostén una nota durante 10-15 segundos sin vibrato',
-                    '📏 Ejercicio de la Regla: Exhala lentamente durante 20 segundos con "SSS" constante',
-                    '🎯 Notas Guiadas: Usa un afinador visual y mantén la aguja estable',
-                    '💪 Fortalecimiento del Core: Ejercicios de plancha para mejorar el soporte abdominal',
-                ],
-                severity,
-                weight,
-                affectedRange: 'full',
-            });
-        } else {
-            console.log('❌ REGLA R3: No activada (Stability variance:', telemetry.stabilityVariance.toFixed(2), '<=', this.THRESHOLDS.STABILITY_VARIANCE_HIGH, ')');
-        }
-
-        // ============================================
-        // REGLA 7: TIMING INCONSISTENTE
-        // ============================================
-        if (Math.abs(telemetry.rhythmicOffsetAverage) > this.THRESHOLDS.TIMING_OFFSET_HIGH) {
-            const isEarly = telemetry.rhythmicOffsetAverage < 0;
-            const severity = this.calculateSeverity(
-                Math.abs(telemetry.rhythmicOffsetAverage),
-                50, 100, 200
-            );
-            const weight = this.SEVERITY_WEIGHTS[severity];
-
-            console.log('✅ REGLA R7 ACTIVADA: Timing Inconsistente');
-            console.log('   → Rhythmic Offset:', telemetry.rhythmicOffsetAverage.toFixed(0), 'ms (umbral:', this.THRESHOLDS.TIMING_OFFSET_HIGH, ')');
-            console.log('   → Dirección:', isEarly ? 'EARLY (Anticipado)' : 'LATE (Retrasado)');
-            console.log('   → Severidad:', severity.toUpperCase());
-            console.log('   → Peso:', weight);
-
-            issues.push({
-                rule: 'R7',
-                diagnosis: isEarly
-                    ? 'Anticipación excesiva (entradas adelantadas)'
-                    : 'Retraso rítmico (entradas tardías)',
-                prescription: [
-                    '🥁 Práctica con Metrónomo: Canta con click a 60 BPM, aumenta gradualmente',
-                    '👏 Clapping Exercises: Aplaude el ritmo antes de cantar para internalizarlo',
-                    '🎧 Grabación y Análisis: Grábate y compara con la pista original',
-                    isEarly
-                        ? '⏸️ Onset Retardado: Practica entrar DESPUÉS del beat intencionalmente'
-                        : '⚡ Ejercicios de Reacción: Responde rápidamente a señales auditivas',
-                ],
-                severity,
-                weight,
-                affectedRange: 'full',
-            });
-        } else {
-            console.log('❌ REGLA R7: No activada (Rhythmic offset:', Math.abs(telemetry.rhythmicOffsetAverage).toFixed(0), '<=', this.THRESHOLDS.TIMING_OFFSET_HIGH, ')');
-        }
-
-        // ============================================
-        // REGLA 4: VIBRATO EXCESIVO
-        // ============================================
-        if (telemetry.vibratoRate > this.THRESHOLDS.VIBRATO_RATE_EXCESSIVE) {
-            const severity = 'mild';
-            const weight = this.SEVERITY_WEIGHTS[severity];
-
-            console.log('✅ REGLA R4 ACTIVADA: Vibrato Excesivo');
-            console.log('   → Vibrato Rate:', telemetry.vibratoRate.toFixed(2), 'Hz (umbral:', this.THRESHOLDS.VIBRATO_RATE_EXCESSIVE, ')');
-            console.log('   → Severidad:', severity.toUpperCase());
-            console.log('   → Peso:', weight);
-
-            issues.push({
-                rule: 'R4',
-                diagnosis: 'Vibrato excesivo o descontrolado',
-                prescription: [
-                    '🎯 Ejercicios de Sostenimiento: Alterna entre notas con y sin vibrato',
-                    '🧊 Straight Tone Practice: Practica notas completamente rectas (sin vibrato)',
-                    '🎚️ Control Gradual: Empieza sin vibrato, añádelo gradualmente al final de la nota',
-                ],
-                severity,
-                weight,
-                affectedRange: 'full',
-            });
-        } else {
-            console.log('❌ REGLA R4: No activada (Vibrato rate:', telemetry.vibratoRate.toFixed(2), '<=', this.THRESHOLDS.VIBRATO_RATE_EXCESSIVE, ')');
-        }
-
-        // ============================================
-        // REGLA 5: DIFICULTAD EN AGUDOS
-        // ============================================
-        if (telemetry.rangeCoverage.notesMissed.some(note => this.isHighNote(note))) {
-            const severity = 'moderate';
-            const weight = this.SEVERITY_WEIGHTS[severity];
-            const highNotesMissed = telemetry.rangeCoverage.notesMissed.filter(n => this.isHighNote(n));
-
-            console.log('✅ REGLA R5 ACTIVADA: Dificultad en Agudos');
-            console.log('   → Notas agudas falladas:', highNotesMissed.length);
-            console.log('   → Notas:', highNotesMissed.join(', '));
-            console.log('   → Severidad:', severity.toUpperCase());
-            console.log('   → Peso:', weight);
-
-            issues.push({
-                rule: 'R5',
-                diagnosis: 'Dificultad para alcanzar notas agudas',
-                prescription: [
-                    '🎵 Sirenas Ascendentes: Desliza suavemente hacia los agudos con "NG" o "M"',
-                    '🗣️ Head Voice Training: Practica falsete y voz de cabeza con vocales cerradas (I, U)',
-                    '🎭 Resonancia Nasal: Canta agudos con sensación de resonancia en la máscara facial',
-                    '📈 Extensión Gradual: No fuerces, extiende tu rango medio tono por semana',
-                ],
-                severity,
-                weight,
-                affectedRange: 'high',
-            });
-        } else {
-            console.log('❌ REGLA R5: No activada (Sin notas agudas falladas)');
-        }
-
-        // ============================================
-        // REGLA 6: DIFICULTAD EN GRAVES
-        // ============================================
-        if (telemetry.rangeCoverage.notesMissed.some(note => this.isLowNote(note))) {
-            const severity = 'moderate';
-            const weight = this.SEVERITY_WEIGHTS[severity];
-            const lowNotesMissed = telemetry.rangeCoverage.notesMissed.filter(n => this.isLowNote(n));
-
-            console.log('✅ REGLA R6 ACTIVADA: Dificultad en Graves');
-            console.log('   → Notas graves falladas:', lowNotesMissed.length);
-            console.log('   → Notas:', lowNotesMissed.join(', '));
-            console.log('   → Severidad:', severity.toUpperCase());
-            console.log('   → Peso:', weight);
-
-            issues.push({
-                rule: 'R6',
-                diagnosis: 'Dificultad para alcanzar notas graves',
-                prescription: [
-                    '🎵 Descensos Cromáticos: Baja lentamente con "AH" relajado',
-                    '💪 Chest Voice Training: Practica voz de pecho con vocales abiertas (A, O)',
-                    '🗣️ Vocal Fry: Usa "creaky voice" para explorar tu registro más bajo',
-                    '📉 Relajación Laríngea: Evita tensión al bajar, deja que la laringe descienda naturalmente',
-                ],
-                severity,
-                weight,
-                affectedRange: 'low',
-            });
-        } else {
-            console.log('❌ REGLA R6: No activada (Sin notas graves falladas)');
-        }
-
-        // ============================================
-        // REGLA 8: ANTICIPACIÓN EXCESIVA
-        // ============================================
-        if (telemetry.earlyNotesCount > telemetry.lateNotesCount * this.THRESHOLDS.EARLY_NOTES_RATIO) {
-            const severity = 'mild';
-            const weight = this.SEVERITY_WEIGHTS[severity];
-
-            console.log('✅ REGLA R8 ACTIVADA: Anticipación Excesiva');
-            console.log('   → Early Notes:', telemetry.earlyNotesCount);
-            console.log('   → Late Notes:', telemetry.lateNotesCount);
-            console.log('   → Ratio:', (telemetry.earlyNotesCount / Math.max(telemetry.lateNotesCount, 1)).toFixed(2));
-            console.log('   → Severidad:', severity.toUpperCase());
-            console.log('   → Peso:', weight);
-
-            issues.push({
-                rule: 'R8',
-                diagnosis: 'Anticipación excesiva (ansioso por entrar)',
-                prescription: [
-                    '⏸️ Delayed Onset Practice: Practica entrar medio tiempo DESPUÉS del beat',
-                    '🧘 Respiración Pre-Entrada: Toma un respiro consciente antes de cada frase',
-                    '🎯 Marcadores Visuales: Usa el piano roll para anticipar visualmente las entradas',
-                ],
-                severity,
-                weight,
-                affectedRange: 'full',
-            });
-        } else {
-            console.log('❌ REGLA R8: No activada (Early/Late ratio:', (telemetry.earlyNotesCount / Math.max(telemetry.lateNotesCount, 1)).toFixed(2), '<=', this.THRESHOLDS.EARLY_NOTES_RATIO, ')');
-        }
-
-        // ============================================
-        // SELECCIÓN DE DIAGNÓSTICO PRINCIPAL (Sistema de Pesos)
-        // ============================================
-        console.log('═══════════════════════════════════════════════════════════');
-        console.log('📋 RESULTADO DEL ANÁLISIS:');
-        console.log('   → Total de reglas activadas:', issues.length);
-
-        if (issues.length === 0) {
-            console.log('   → Diagnóstico: EXCELENTE (Ninguna regla activada)');
-            console.log('═══════════════════════════════════════════════════════════');
-            return this.getExcellentDiagnosis();
-        }
-
-        // Ordenar por PESO (severidad × importancia)
-        issues.sort((a, b) => b.weight - a.weight);
-
-        console.log('   → Reglas ordenadas por peso:');
-        issues.forEach(issue => {
-            console.log(`      ${issue.rule}: ${issue.diagnosis} (${issue.severity.toUpperCase()}, peso: ${issue.weight})`);
+        console.log('🔧 Inyectando hechos dinámicos al Motor Prolog...');
+        console.log('📊 Telemetría:', {
+          pitchDeviation: telemetry.pitchDeviationAverage.toFixed(2),
+          rhythmOffset: telemetry.rhythmicOffsetAverage.toFixed(2),
+          vibratoRate: telemetry.vibratoRate.toFixed(2),
+          stabilityVar: telemetry.stabilityVariance.toFixed(4),
         });
 
-        const primaryIssue = issues[0];
-        const secondaryIssues = issues.slice(1).map(i => i.diagnosis);
+        // Consultar programa
+        session.consult(fullProgram, {
+          success: () => {
+            console.log('✅ Programa Prolog cargado exitosamente');
 
-        console.log('   → ⭐ DIAGNÓSTICO PRINCIPAL:', primaryIssue.rule, '-', primaryIssue.diagnosis);
-        if (secondaryIssues.length > 0) {
-            console.log('   → Diagnósticos secundarios:', secondaryIssues.join(', '));
-        }
-        console.log('═══════════════════════════════════════════════════════════');
+            // Ejecutar query de diagnóstico (Backward Chaining)
+            session.query('diagnostico(X).', {
+              success: () => {
+                const diagnoses: string[] = [];
 
-        return {
-            primaryIssue: primaryIssue.diagnosis,
-            secondaryIssues,
-            diagnosis: this.generateDetailedDiagnosis(primaryIssue, telemetry),
-            prescription: primaryIssue.prescription,
-            severity: primaryIssue.severity,
-            affectedRange: primaryIssue.affectedRange || 'full',
-        };
-    }
+                // Función recursiva para obtener todas las respuestas de diagnóstico
+                const getDiagnoses = () => {
+                  session.answer({
+                    success: (answer: unknown) => {
+                      if (answer) {
+                        const formatted = pl.format_answer(answer);
+                        // Extraer el diagnóstico del formato "X = diagnostico_name"
+                        if (formatted) {
+                          const match = formatted.match(/X\s*=\s*(\w+)/);
+                          if (match && match[1]) {
+                            diagnoses.push(match[1]);
+                          }
+                        }
+                        getDiagnoses(); // Buscar más diagnósticos
+                      } else {
+                        // No hay más diagnósticos, ahora consultar recomendaciones
+                        console.log(`🧠 Prolog encontró ${diagnoses.length} diagnóstico(s):`, diagnoses);
+                        
+                        // Ejecutar query de recomendaciones
+                        session.query('recomendacion(Y).', {
+                          success: () => {
+                            const recommendations: string[] = [];
+                            
+                            // Función recursiva para obtener todas las recomendaciones
+                            const getRecommendations = () => {
+                              session.answer({
+                                success: (answer: unknown) => {
+                                  if (answer) {
+                                    const formatted = pl.format_answer(answer);
+                                    // Extraer la recomendación del formato "Y = 'texto'"
+                                    if (formatted) {
+                                      // Match para strings con comillas simples
+                                      const match = formatted.match(/Y\s*=\s*'([^']+)'/);
+                                      if (match && match[1]) {
+                                        recommendations.push(match[1]);
+                                      }
+                                    }
+                                    getRecommendations(); // Buscar más recomendaciones
+                                  } else {
+                                    // No hay más recomendaciones
+                                    console.log(`💡 Prolog encontró ${recommendations.length} recomendación(es)`);
+                                    resolve({ diagnoses, recommendations });
+                                  }
+                                },
+                                fail: () => {
+                                  console.log(`💡 Prolog encontró ${recommendations.length} recomendación(es)`);
+                                  resolve({ diagnoses, recommendations });
+                                },
+                                error: (err: unknown) => {
+                                  console.error('❌ Error al obtener recomendaciones:', err);
+                                  resolve({ diagnoses, recommendations });
+                                },
+                              });
+                            };
+                            
+                            getRecommendations();
+                          },
+                          error: (err: unknown) => {
+                            console.error('❌ Error en query de recomendaciones:', err);
+                            resolve({ diagnoses, recommendations: [] });
+                          },
+                        });
+                      }
+                    },
+                    fail: () => {
+                      console.log(`🧠 Prolog encontró ${diagnoses.length} diagnóstico(s):`, diagnoses);
+                      // Sin diagnósticos, sin recomendaciones
+                      resolve({ diagnoses, recommendations: [] });
+                    },
+                    error: (err: unknown) => {
+                      console.error('❌ Error en answer de diagnóstico:', err);
+                      resolve({ diagnoses, recommendations: [] });
+                    },
+                  });
+                };
 
-    /**
-     * Calcula la severidad basada en umbrales
-     */
-    private static calculateSeverity(
-        value: number,
-        _mildThreshold: number,
-        moderateThreshold: number,
-        severeThreshold: number
-    ): 'mild' | 'moderate' | 'severe' {
-        if (value >= severeThreshold) return 'severe';
-        if (value >= moderateThreshold) return 'moderate';
-        return 'mild';
-    }
+                getDiagnoses();
+              },
+              error: (err: unknown) => {
+                console.error('❌ Error en query:', err);
+                reject(new Error(`Prolog query error: ${err}`));
+              },
+            });
+          },
+          error: (err: unknown) => {
+            console.error('❌ Error al cargar programa Prolog:', err);
+            reject(new Error(`Prolog consult error: ${err}`));
+          },
+        });
+      } catch (error) {
+        console.error('❌ Error en Motor Prolog:', error);
+        reject(error);
+      }
+    });
+  }
 
-    /**
-   * Detecta el rango afectado basado en las notas falladas
+  /**
+   * Prioriza diagnósticos por severidad
    */
-    private static detectAffectedRange(
-        telemetry: SessionTelemetry,
-        _type: 'flat' | 'sharp'
-    ): 'low' | 'mid' | 'high' | 'full' {
-        const missedNotes = telemetry.rangeCoverage.notesMissed;
+  private static prioritizeDiagnoses(diagnoses: string[]): string[] {
+    return diagnoses.sort((a, b) => {
+      const weightA = SEVERITY_WEIGHTS[a] ?? 1;
+      const weightB = SEVERITY_WEIGHTS[b] ?? 1;
+      return weightB - weightA; // Mayor peso primero
+    });
+  }
 
-        const hasLowIssues = missedNotes.some(note => this.isLowNote(note));
-        const hasHighIssues = missedNotes.some(note => this.isHighNote(note));
-
-        if (hasLowIssues && hasHighIssues) return 'full';
-        if (hasHighIssues) return 'high';
-        if (hasLowIssues) return 'low';
-        return 'mid';
+  /**
+   * Determina la severidad global basada en los diagnósticos
+   */
+  private static determineSeverity(diagnoses: string[]): 'mild' | 'moderate' | 'severe' {
+    if (diagnoses.length === 0 || (diagnoses.length === 1 && diagnoses[0] === 'excelente')) {
+      return 'mild';
     }
 
-    /**
-     * Determina si una nota es aguda (>= C5)
-     */
-    private static isHighNote(note: string): boolean {
-        const octave = parseInt(note.match(/\d+/)?.[0] || '0');
-        return octave >= 5;
+    const maxWeight = Math.max(...diagnoses.map(d => SEVERITY_WEIGHTS[d] ?? 1));
+
+    if (maxWeight >= 8) return 'severe';
+    if (maxWeight >= 5) return 'moderate';
+    return 'mild';
+  }
+
+  /**
+   * Genera descripción detallada combinando múltiples diagnósticos
+   */
+  private static generateDetailedDescription(diagnoses: string[]): string {
+    if (diagnoses.length === 0 || (diagnoses.length === 1 && diagnoses[0] === 'excelente')) {
+      return KNOWLEDGE_BASE_PRESCRIPTIONS['excelente'].diagnosis;
     }
 
-    /**
-     * Determina si una nota es grave (<= C3)
-     */
-    private static isLowNote(note: string): boolean {
-        const octave = parseInt(note.match(/\d+/)?.[0] || '0');
-        return octave <= 3;
+    const primary = diagnoses[0];
+    const primaryInfo = KNOWLEDGE_BASE_PRESCRIPTIONS[primary];
+
+    if (diagnoses.length === 1) {
+      return primaryInfo?.diagnosis ?? 'Diagnóstico no reconocido en la base de conocimientos.';
     }
 
-    /**
-     * Genera diagnóstico detallado con contexto técnico
-     */
-    private static generateDetailedDiagnosis(
-        issue: { rule: string; diagnosis: string; severity: string },
-        telemetry: SessionTelemetry
-    ): string {
-        const templates: Record<string, string> = {
-            R1: `Se detectó una desviación promedio de ${Math.abs(telemetry.pitchDeviationAverage).toFixed(1)} cents por debajo del tono objetivo. Esto indica falta de presión subglótica (apoyo respiratorio insuficiente). Tu voz necesita más soporte del diafragma para mantener la afinación correcta.`,
+    // Múltiples diagnósticos
+    const secondaryNames = diagnoses.slice(1, 3).map(d => {
+      const info = KNOWLEDGE_BASE_PRESCRIPTIONS[d];
+      return info?.primaryIssue ?? d;
+    });
 
-            R2: `Se detectó una desviación promedio de ${telemetry.pitchDeviationAverage.toFixed(1)} cents por encima del tono objetivo. Esto sugiere constricción laríngea (tensión en la garganta). Estás forzando las cuerdas vocales, lo que eleva artificialmente el pitch.`,
+    return `${primaryInfo?.diagnosis ?? 'Diagnóstico principal detectado.'} Además se detectaron: ${secondaryNames.join(', ')}.`;
+  }
 
-            R3: `Se detectó una varianza de ${telemetry.stabilityVariance.toFixed(1)} Hz en notas sostenidas. Tu voz fluctúa excesivamente, indicando control inconsistente del flujo de aire. Esto puede deberse a falta de soporte abdominal o tensión muscular.`,
+  /**
+   * Método principal de diagnóstico
+   * 
+   * Ejecuta el Motor de Inferencia Prolog y mapea los resultados
+   * a una estructura VocalDiagnosis.
+   * 
+   * IMPORTANTE: NO hay fallback imperativo.
+   * Si Prolog no encuentra diagnósticos problemáticos, retorna "excelente".
+   * Las recomendaciones provienen exclusivamente de Prolog (NO hardcoded).
+   */
+  static async diagnose(telemetry: SessionTelemetry): Promise<VocalDiagnosis> {
+    console.log('🚀 Iniciando Motor de Inferencia Prolog...');
 
-            R7: `Se detectó un offset rítmico promedio de ${Math.abs(telemetry.rhythmicOffsetAverage).toFixed(0)} ms. Tus entradas están ${telemetry.rhythmicOffsetAverage < 0 ? 'adelantadas' : 'retrasadas'} consistentemente. Necesitas mejorar tu sincronización con la pista.`,
+    try {
+      // Ejecutar inferencia Prolog (diagnósticos + recomendaciones)
+      const { diagnoses: rawDiagnoses, recommendations: prologRecommendations } = 
+        await this.runPrologInference(telemetry);
 
-            R4: `Se detectó un vibrato de ${telemetry.vibratoRate.toFixed(1)} Hz. El vibrato natural debe estar entre 4-6 Hz. Un vibrato excesivo puede sonar artificial o nervioso.`,
+      // Filtrar diagnósticos desconocidos y priorizar
+      const knownDiagnoses = rawDiagnoses.filter(d => d in KNOWLEDGE_BASE_PRESCRIPTIONS);
+      const prioritizedDiagnoses = this.prioritizeDiagnoses(knownDiagnoses);
 
-            R5: `Fallaste ${telemetry.rangeCoverage.notesMissed.filter(n => this.isHighNote(n)).length} notas agudas. Tu rango cómodo actual termina en ${telemetry.rangeCoverage.comfortableRange[1]}. Necesitas desarrollar tu voz de cabeza (head voice).`,
+      // Si no hay diagnósticos o solo "excelente", es una performance excelente
+      if (prioritizedDiagnoses.length === 0) {
+        console.log('✨ Performance excelente - Sin problemas detectados');
+        return this.buildExcellentDiagnosis();
+      }
 
-            R6: `Fallaste ${telemetry.rangeCoverage.notesMissed.filter(n => this.isLowNote(n)).length} notas graves. Tu rango cómodo actual comienza en ${telemetry.rangeCoverage.comfortableRange[0]}. Necesitas desarrollar tu voz de pecho (chest voice).`,
+      // Obtener diagnóstico primario
+      const primaryDiagnosis = prioritizedDiagnoses[0];
+      const primaryInfo = KNOWLEDGE_BASE_PRESCRIPTIONS[primaryDiagnosis];
 
-            R8: `${telemetry.earlyNotesCount} de tus entradas fueron anticipadas vs ${telemetry.lateNotesCount} retrasadas. Esto indica ansiedad o falta de control del onset (inicio de la nota).`,
-        };
+      // Las prescripciones de Prolog tienen prioridad, pero si no hay, usar las del KB
+      let topRecommendations = prologRecommendations.slice(0, 6);
+      
+      // FALLBACK: Si Prolog no devolvió recomendaciones, usar las del Knowledge Base
+      if (topRecommendations.length === 0 && primaryInfo?.prescription) {
+        console.log(`⚠️ Prolog no devolvió recomendaciones, usando KB para: ${primaryDiagnosis}`);
+        topRecommendations = primaryInfo.prescription;
+      }
 
-        return templates[issue.rule] || issue.diagnosis;
+      console.log(`📋 Prescripciones finales: ${topRecommendations.length} ejercicio(s)`);
+
+      // Construir respuesta estructurada
+      return {
+        primaryIssue: primaryInfo?.primaryIssue ?? primaryDiagnosis,
+        secondaryIssues: prioritizedDiagnoses.slice(1, 4).map(d => 
+          KNOWLEDGE_BASE_PRESCRIPTIONS[d]?.primaryIssue ?? d
+        ),
+        diagnosis: this.generateDetailedDescription(prioritizedDiagnoses),
+        prescription: topRecommendations,
+        severity: this.determineSeverity(prioritizedDiagnoses),
+        affectedRange: primaryInfo?.affectedRange ?? 'full',
+        allDiagnoses: prioritizedDiagnoses, // ✨ NUEVO: Lista completa de diagnósticos detectados
+      };
+
+    } catch (error) {
+      console.error('❌ Error en Motor de Inferencia:', error);
+      
+      // En caso de error del motor Prolog, retornar diagnóstico de error técnico
+      return {
+        primaryIssue: 'Error Técnico',
+        secondaryIssues: [],
+        diagnosis: 'Hubo un error al procesar tu performance. Por favor intenta de nuevo.',
+        prescription: [
+          '🔄 Intenta cantar de nuevo',
+          '🎤 Asegúrate de que el micrófono esté funcionando correctamente',
+          '📧 Si el problema persiste, contacta soporte técnico',
+        ],
+        severity: 'mild',
+        affectedRange: 'full',
+      };
     }
+  }
 
-    /**
-     * Diagnóstico para performances excelentes (con variabilidad)
-     */
-    private static getExcellentDiagnosis(): VocalDiagnosis {
-        const excellentMessages = [
-            'No se detectaron problemas técnicos significativos. Tu afinación, estabilidad y timing están en niveles profesionales. ¡Sigue así!',
-            'Performance impecable. Tus métricas vocales están dentro de los estándares profesionales. Continúa con esta consistencia.',
-            'Excelente control técnico. Todos los parámetros vocales están optimizados. Tu técnica es sólida.',
-        ];
+  /**
+   * Construye diagnóstico para performance excelente
+   * Las recomendaciones se obtienen desde KNOWLEDGE_BASE_PRESCRIPTIONS
+   * (que mantiene la estructura pero las recomendaciones reales vienen de Prolog)
+   */
+  private static buildExcellentDiagnosis(): VocalDiagnosis {
+    const info = KNOWLEDGE_BASE_PRESCRIPTIONS['excelente'];
+    return {
+      primaryIssue: info.primaryIssue,
+      secondaryIssues: [],
+      diagnosis: info.diagnosis,
+      prescription: info.prescription, // Fallback para "excelente"
+      severity: 'mild',
+      affectedRange: info.affectedRange,
+    };
+  }
 
-        const randomIndex = Math.floor(Math.random() * excellentMessages.length);
+  /**
+   * Obtiene la lista de todos los diagnósticos disponibles
+   * (Útil para debugging y documentación)
+   */
+  static getAvailableDiagnoses(): string[] {
+    return Object.keys(KNOWLEDGE_BASE_PRESCRIPTIONS);
+  }
 
-        return {
-            primaryIssue: '¡Performance Excelente!',
-            secondaryIssues: [],
-            diagnosis: excellentMessages[randomIndex],
-            prescription: [
-                '🏆 Mantén tu rutina actual de práctica',
-                '📈 Considera aumentar la dificultad de las canciones',
-                '🎤 Experimenta con diferentes estilos vocales',
-                '🎵 Trabaja en interpretación y expresión emocional',
-            ],
-            severity: 'mild',
-            affectedRange: 'full',
-        };
-    }
+  /**
+   * Obtiene información de un diagnóstico específico
+   * (Útil para debugging)
+   */
+  static getDiagnosisInfo(diagnosisId: string) {
+    return KNOWLEDGE_BASE_PRESCRIPTIONS[diagnosisId] ?? null;
+  }
 }

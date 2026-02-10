@@ -2,18 +2,31 @@
  * ============================================
  * VALIDATION UTILITIES
  * ============================================
- * Funciones reutilizables para validación de datos
- * Refactorizado para seguir principios de Clean Code
+ * Funciones reutilizables para validación de datos usando Zod
+ * 
+ * Este módulo NO es parte del Motor de Inferencia (Prolog),
+ * sino que asegura la integridad de los datos ANTES de procesarlos.
+ * 
+ * Principios:
+ * - Fail Fast: Validar temprano para evitar errores tardíos
+ * - Type Safety: Usar Zod para inferencia de tipos automática
+ * - Clear Errors: Mensajes descriptivos para debugging
+ * 
+ * @module validation.utils
+ * @version 2.0.0
  */
 
 import { z } from 'zod';
 
 // ============================================
-// ZOD SCHEMAS
+// ZOD SCHEMAS - DEFINICIONES DE VALIDACIÓN
 // ============================================
 
 /**
- * Schema para validar un punto de performance
+ * Schema para validar un punto de performance individual
+ * 
+ * Cada punto representa una muestra de audio procesada (~100ms)
+ * Contiene frecuencia detectada vs frecuencia objetivo
  */
 const PerformanceDataPointSchema = z.object({
   timestamp: z.number().nonnegative('Timestamp must be non-negative'),
@@ -51,28 +64,39 @@ const MelodyDataSchema = z.object({
 
 /**
  * Schema para validar entrada de canción
+ * 
+ * Valida todos los campos requeridos para crear una canción en el sistema
+ * Incluye validaciones estrictas de formato y rangos
  */
 const SongInputSchema = z.object({
   title: z.string()
-    .min(1, 'Title cannot be empty')
-    .max(200, 'Title must be 200 characters or less')
-    .trim(),
+    .min(1, 'El título no puede estar vacío')
+    .max(200, 'El título debe tener máximo 200 caracteres')
+    .trim()
+    .transform(str => str.replace(/\s+/g, ' ')), // Normalizar espacios
+  
   artist: z.string()
-    .min(1, 'Artist cannot be empty')
-    .max(200, 'Artist must be 200 characters or less')
-    .trim(),
+    .min(1, 'El artista no puede estar vacío')
+    .max(200, 'El artista debe tener máximo 200 caracteres')
+    .trim()
+    .transform(str => str.replace(/\s+/g, ' ')),
+  
   bpm: z.number()
-    .int('BPM must be an integer')
-    .min(20, 'BPM must be at least 20')
-    .max(300, 'BPM must be at most 300'),
+    .int('El BPM debe ser un número entero')
+    .min(20, 'El BPM mínimo es 20 (muy lento)')
+    .max(300, 'El BPM máximo es 300 (muy rápido)'),
+  
   key: z.string()
-    .min(1, 'Key cannot be empty')
-    .max(10, 'Key must be 10 characters or less')
+    .min(1, 'La tonalidad no puede estar vacía')
+    .max(10, 'La tonalidad debe tener máximo 10 caracteres')
+    .regex(/^[A-G][#b]?\s+(Major|Minor|Maior|Menor)$/i, 'Formato de tonalidad inválido (ej: "C Major", "A Minor")')
     .trim(),
+  
   audioFilename: z.string()
-    .min(1, 'Audio filename cannot be empty')
-    .max(255, 'Audio filename must be 255 characters or less')
-    .endsWith('.mp3', 'Audio filename must end with .mp3'),
+    .min(1, 'El nombre del archivo no puede estar vacío')
+    .max(255, 'El nombre del archivo debe tener máximo 255 caracteres')
+    .regex(/\.mp3$/i, 'El archivo debe tener extensión .mp3'),
+  
   melodyData: MelodyDataSchema,
 });
 
@@ -81,21 +105,37 @@ const SongInputSchema = z.object({
 // ============================================
 
 /**
- * Resultado de validación
+ * Resultado de validación normalizado
+ * 
+ * Estructura consistente para todos los tipos de validación
+ * Permite manejo unificado de errores en controllers
  */
 export interface ValidationResult {
   isValid: boolean;
-  errors: string[];
+  errors: string[];  // Array de mensajes de error legibles
 }
 
 // ============================================
-// VALIDATION FUNCTIONS
+// VALIDATION FUNCTIONS - ENTRADA DE DATOS
 // ============================================
 
 /**
  * Valida la estructura de performanceData
+ * 
+ * Verifica que cada punto tenga:
+ * - timestamp válido (>= 0)
+ * - detectedFrequency válida (puede ser null)
+ * - targetFrequency válida (> 0)
+ * - targetNote válida (string no vacío)
+ * 
  * @param data - Datos de performance a validar
- * @returns Resultado de validación
+ * @returns Resultado de validación con errores descriptivos
+ * 
+ * @example
+ * const result = validatePerformanceData(data);
+ * if (!result.isValid) {
+ *   return res.status(400).json({ errors: result.errors });
+ * }
  */
 export function validatePerformanceData(data: unknown): ValidationResult {
   try {

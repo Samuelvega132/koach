@@ -102,6 +102,10 @@ export const usePerformanceSubmit = ({
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            // Incluir token de autenticación si existe
+            ...(typeof window !== 'undefined' && localStorage.getItem('koach_access_token')
+              ? { 'Authorization': `Bearer ${localStorage.getItem('koach_access_token')}` }
+              : {}),
           },
           body: JSON.stringify(payload),
         });

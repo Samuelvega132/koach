@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Music, Sparkles } from "lucide-react";
 import { VocalRangeWizard, VocalRangeResult, VoiceType } from "./VocalRangeWizard";
 
@@ -29,6 +29,11 @@ interface VocalCardProps {
 export function VocalCard({ savedRange, onRangeUpdate }: VocalCardProps) {
   const [showWizard, setShowWizard] = useState(false);
   const [localRange, setLocalRange] = useState<VocalRangeResult | null>(savedRange || null);
+
+  // Sincronizar con savedRange cuando cambie desde el padre
+  useEffect(() => {
+    setLocalRange(savedRange || null);
+  }, [savedRange]);
 
   const handleComplete = (result: VocalRangeResult) => {
     setLocalRange(result);

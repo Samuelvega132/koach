@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Mic2, Music, BarChart3, Radio, LogIn, User as UserIcon, LogOut, ChevronDown } from "lucide-react";
+import { Mic2, Music, LogIn, User as UserIcon, LogOut, ChevronDown } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { clsx } from "clsx";
 import { useAuth } from "@/contexts/AuthContext";
@@ -20,10 +20,8 @@ export const Navbar = () => {
     }, [pathname]);
 
     const navItems = [
-        { name: "Studio", href: "/", icon: Mic2 },
-        { name: "Songs", href: "/songs", icon: Music },
-        { name: "Results", href: "/results", icon: BarChart3 },
-        { name: "Live", href: "/live", icon: Radio },
+        { name: "Inicio", href: "/", icon: Mic2 },
+        { name: "Canciones", href: "/songs", icon: Music },
     ];
 
     const handleLogout = async () => {

@@ -26,11 +26,20 @@ export const StudioClient = ({ song }: StudioClientProps) => {
     // 1. Audio Player (Backing Track)
     const { isPlaying, currentTime, duration, stop, toggle, getCurrentTime } = useAudioPlayer(song.audioUrl);
 
-    // 2. Microphone Input
-    const { isListening, start: startMic, stop: stopMic, audioContext, source } = useMicrophone();
+    // 2. Microphone Input - OPTIMIZED FOR FOCUSRITE SCARLETT
+    // Gain 2.0x para compensar señal baja de interfaces profesionales
+    const { isListening, start: startMic, stop: stopMic, audioContext, source } = useMicrophone({
+        initialGain: 2.0,      // 2x digital boost (Focusrite fix)
+        sampleRate: 48000,     // Alta resolución para mejor detección
+    });
 
-    // 3. Real-time Pitch Detection (now returns getters)
-    const { getPitch, getRawPitch } = usePitchDetector(audioContext, source);
+    // 3. Real-time Pitch Detection - OPTIMIZED FOR BASS/BARITONE
+    // fftSize 8192 para mejor resolución en graves, threshold 0.10 para sensibilidad
+    const { getPitch, getRawPitch } = usePitchDetector(audioContext, source, {
+        fftSize: 8192,         // Mayor buffer = mejor detección de graves
+        yinThreshold: 0.10,    // Más sensible (mejor para tiempo real)
+        smoothingFactor: 0.25, // Smoothing moderado para respuesta rápida
+    });
 
     // 4. Session Telemetry Collection
     const { startRecording, recordDataPoint, getPerformanceData, getSessionStats } = useSessionTelemetry();
@@ -46,6 +55,7 @@ export const StudioClient = ({ song }: StudioClientProps) => {
     const [rawPitchDisplay, setRawPitchDisplay] = useState<number | null>(null);
     const [userPitchDisplay, setUserPitchDisplay] = useState<number | null>(null);
     const [isRecording, setIsRecording] = useState<boolean>(false);
+    const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false); // 🆕 Estado de análisis
 
     // CRITICAL: RAF loop for UI updates (decoupled from audio processing)
     const rafRef = useRef<number>();
@@ -86,7 +96,7 @@ export const StudioClient = ({ song }: StudioClientProps) => {
                 setAccuracy(0);
             }
 
-            // Record telemetry data point if recording (SIEMPRE registrar cuando hay nota objetivo)
+            // Record telemetry data point if recording (SOLO cuando hay nota objetivo válida)
             if (isRecording && isPlaying) {
                 recordDataPoint(detectedFreq, frequency, noteName);
             }
@@ -94,13 +104,9 @@ export const StudioClient = ({ song }: StudioClientProps) => {
             setTargetNote("-");
             setAccuracy(0);
             
-            // Registrar puntos sin nota objetivo (silencio/transiciones)
-            // Esto es importante para calcular métricas de duración y estabilidad
-            if (isRecording && isPlaying) {
-                // Usar la última nota conocida o una nota de referencia
-                const refNote = calculatedNotes[0] || { frequency: 0, noteName: 'N/A' };
-                recordDataPoint(detectedFreq, refNote.frequency, refNote.noteName);
-            }
+            // ⚠️ NO registrar puntos cuando no hay nota objetivo
+            // El usuario no debe ser evaluado durante silencios/transiciones
+            // Solo registramos cuando hay una nota que debe cantar
         }
 
         rafRef.current = requestAnimationFrame(updateUI);
@@ -155,6 +161,9 @@ export const StudioClient = ({ song }: StudioClientProps) => {
             return;
         }
 
+        // ⚠️ ACTIVAR ESTADO DE ANÁLISIS (Spinner + Mensaje)
+        setIsAnalyzing(true);
+
         try {
             const url = `${API_CONFIG.baseURL}${API_CONFIG.endpoints.performances}`;
             
@@ -163,6 +172,29 @@ export const StudioClient = ({ song }: StudioClientProps) => {
                 userName: 'Usuario Demo',
                 performanceData,
             };
+
+            // ⚠️ LOG DE "CHIVATO" - VER EXACTAMENTE QUÉ ENVIAMOS AL BACKEND
+            console.log('════════════════════════════════════════════════════════════');
+            console.log('📦 PAYLOAD A ENVIAR AL BACKEND');
+            console.log('════════════════════════════════════════════════════════════');
+            console.log('🆔 Song ID:', payload.songId);
+            console.log('📊 Total puntos:', payload.performanceData.length);
+            console.log('🎵 Puntos válidos (freq > 0):', validPoints.length);
+            
+            // Calcular estadísticas de desafinación RAW para debug
+            const deviations = validPoints.map(p => {
+                const cents = 1200 * Math.log2((p.detectedFrequency || 1) / p.targetFrequency);
+                return cents;
+            });
+            const sumSquares = deviations.reduce((s, v) => s + v * v, 0);
+            const rms = Math.sqrt(sumSquares / deviations.length);
+            const avgSimple = deviations.reduce((s, v) => s + v, 0) / deviations.length;
+            
+            console.log('🔢 ESTADÍSTICAS DE AFINACIÓN (Frontend):');
+            console.log(`   → Promedio SIMPLE: ${avgSimple.toFixed(2)} cents (⚠️ PUEDE CANCELAR ERRORES)`);
+            console.log(`   → RMS (correcto): ${rms.toFixed(2)} cents (✅ ERROR ABSOLUTO REAL)`);
+            console.log('📋 Primeros 5 puntos:', payload.performanceData.slice(0, 5));
+            console.log('════════════════════════════════════════════════════════════');
 
             const response = await fetch(url, {
                 method: 'POST',
@@ -179,9 +211,14 @@ export const StudioClient = ({ song }: StudioClientProps) => {
 
             const data = await response.json();
 
+            // ⚠️ DELAY MÍNIMO: Da tiempo al usuario a ver el spinner (UX de "robustez")
+            // El backend ya está procesando, pero visualmente damos sensación de análisis profundo
+            await new Promise(resolve => setTimeout(resolve, 1500));
+
             // Navigate to results page
             window.location.href = `/results/${data.sessionId}`;
         } catch (error) {
+            setIsAnalyzing(false); // Desactivar spinner en caso de error
             if (process.env.NODE_ENV === 'development') {
                 console.error('[Studio] Session finish failed:', error);
             }
@@ -191,6 +228,41 @@ export const StudioClient = ({ song }: StudioClientProps) => {
 
     return (
         <div className="flex flex-col h-[calc(100vh-6rem)] relative">
+            {/* ⚠️ OVERLAY DE ANÁLISIS (Spinner + Mensaje de Procesamiento) */}
+            {isAnalyzing && (
+                <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex flex-col items-center justify-center gap-6">
+                    <div className="relative">
+                        {/* Spinner Animado */}
+                        <div className="w-24 h-24 border-4 border-purple-500/20 border-t-purple-500 rounded-full animate-spin" />
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="w-16 h-16 border-4 border-purple-400/30 border-b-purple-400 rounded-full animate-spin" style={{ animationDirection: 'reverse', animationDuration: '0.8s' }} />
+                        </div>
+                    </div>
+                    
+                    {/* Texto de Estado */}
+                    <div className="text-center space-y-3">
+                        <h2 className="text-3xl font-bold text-white tracking-tight">
+                            Analizando tu Sesión
+                        </h2>
+                        <p className="text-purple-300 text-lg max-w-md">
+                            El Motor de Inferencia está procesando {getPerformanceData().length.toLocaleString()} puntos de datos...
+                        </p>
+                        <div className="flex items-center justify-center gap-2 text-sm text-gray-400 mt-4">
+                            <span className="inline-block w-2 h-2 bg-purple-500 rounded-full animate-pulse" />
+                            <span>Calculando métricas DSP</span>
+                        </div>
+                        <div className="flex items-center justify-center gap-2 text-sm text-gray-400">
+                            <span className="inline-block w-2 h-2 bg-purple-500 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
+                            <span>Ejecutando reglas Prolog</span>
+                        </div>
+                        <div className="flex items-center justify-center gap-2 text-sm text-gray-400">
+                            <span className="inline-block w-2 h-2 bg-purple-500 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
+                            <span>Generando diagnóstico vocal</span>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Header Studio */}
             <header className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-black/40 backdrop-blur-md z-10">
                 <div className="flex items-center gap-4">

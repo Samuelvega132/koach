@@ -1,7 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import prisma from '../lib/prisma';
-import { ExpertSystem } from '../services/expert-system.service';
+import { VocalDiagnosisService } from '../services/vocal-diagnosis.service';
 import { validatePerformanceData } from '../utils/validation.utils';
+import { calculateSessionTelemetry } from '../utils/telemetry.utils';
+import { frequencyToCents, isInTune, calculateJitter, calculateStabilityPercentage } from '../utils/dsp.utils';
 import type { PerformanceDataPoint } from '../types';
 
 // ============================================
@@ -67,24 +69,75 @@ export class PerformanceController {
       console.log('📋 Últimos 3 puntos:', performanceData.slice(-3));
       console.log('═══════════════════════════════════════════════════════════');
 
-      // Analizar performance con Sistema Experto
-      const analysis = ExpertSystem.analyzePerformance(performanceData, songDuration);
+      // ============================================
+      // 🧠 CONEXIÓN DIRECTA AL MOTOR DE INFERENCIA PROLOG
+      // ============================================
+      // Constantes de rango vocal humano
+      const VOCAL_RANGE_MIN_HZ = 80;
+      const VOCAL_RANGE_MAX_HZ = 1000;
+      
+      // 1. Calcular telemetría de sesión
+      const telemetry = calculateSessionTelemetry(performanceData, songDuration);
 
-      // 🔍 Log del análisis generado
-      console.log('🧠 ANÁLISIS DEL SISTEMA EXPERTO:');
-      console.log('   → Score General:', analysis.score.toFixed(2));
-      console.log('   → Pitch Accuracy:', analysis.feedback.pitchAccuracy.score.toFixed(2));
-      console.log('   → Stability:', analysis.feedback.stability.score.toFixed(2));
-      console.log('   → Timing:', analysis.feedback.timing.score.toFixed(2));
-      console.log('   → Diagnosis:', analysis.diagnosis.primaryIssue);
-      console.log('   → Severity:', analysis.diagnosis.severity);
+      // 2. Ejecutar Motor de Inferencia Prolog DIRECTAMENTE
+      const diagnosis = await VocalDiagnosisService.diagnose(telemetry);
+
+      // 3. Filtrar puntos válidos EN RANGO VOCAL HUMANO
+      const validPoints = performanceData.filter((p: PerformanceDataPoint) => 
+        p.detectedFrequency && 
+        p.detectedFrequency > 0 &&
+        p.targetFrequency >= VOCAL_RANGE_MIN_HZ &&
+        p.targetFrequency <= VOCAL_RANGE_MAX_HZ
+      );
+      
+      console.log(`🎯 Puntos válidos en rango vocal: ${validPoints.length} de ${performanceData.length}`);
+      
+      const pitchAccuracy = calculatePitchAccuracy(validPoints);
+      const stability = calculateStability(validPoints);
+      const timing = { score: 90, avgLatency: 0, onTimePercentage: 90 }; // Placeholder
+
+      // 4. Score global ponderado
+      const score = Math.round(pitchAccuracy.score * 0.5 + stability.score * 0.3 + timing.score * 0.2);
+
+      // ============================================
+      // 🛡️ SANITY CHECK: Score bajo + Diagnóstico "Excelente" = ERROR
+      // ============================================
+      let finalDiagnosis = diagnosis;
+      if (score < 50 && diagnosis.primaryIssue.includes('Excelente')) {
+        console.warn('⚠️ SANITY CHECK ACTIVADO: Score bajo pero Prolog dice Excelente');
+        console.warn(`   → Score: ${score}, Diagnosis: ${diagnosis.primaryIssue}`);
+        console.warn(`   → Corrigiendo diagnóstico...`);
+        finalDiagnosis = {
+          ...diagnosis,
+          primaryIssue: 'Desafinación Severa Detectada',
+          diagnosis: `Se detectó un error de afinación significativo (RMS: ${telemetry.pitchDeviationAverage.toFixed(0)} cents). El sistema detectó problemas pero Prolog no pudo clasificarlos.`,
+          prescription: [
+            '🚨 Se detectaron errores significativos de afinación durante tu sesión',
+            '🎯 Tu desviación RMS es muy alta - practica con un afinador visual',
+            '🎹 Empieza con notas simples y escalas antes de canciones completas',
+            '⏱️ Canta más lento para mejorar la precisión',
+          ],
+          severity: 'severe',
+        };
+      }
+
+      // 🔍 Log del análisis generado por el Motor de Inferencia
+      console.log('🧠 ANÁLISIS DEL MOTOR DE INFERENCIA:');
+      console.log('   → Score General:', score);
+      console.log('   → Pitch Accuracy:', pitchAccuracy.score);
+      console.log('   → Stability:', stability.score);
+      console.log('   → Timing:', timing.score);
+      console.log('   → RMS Afinación:', telemetry.pitchDeviationAverage.toFixed(2), 'cents');
+      console.log('   → Diagnosis:', finalDiagnosis.primaryIssue);
+      console.log('   → Severity:', finalDiagnosis.severity);
       console.log('═══════════════════════════════════════════════════════════');
 
-      // Preparar objeto de análisis para almacenamiento
-      const analysisData = {
-        pitchAccuracy: analysis.feedback.pitchAccuracy,
-        stability: analysis.feedback.stability,
-        timing: analysis.feedback.timing,
+      // Feedback con recomendaciones
+      const feedback = {
+        pitchAccuracy,
+        stability,
+        timing,
+        recommendations: finalDiagnosis.prescription,
       };
 
       // Crear sesión y log de performance
@@ -92,10 +145,11 @@ export class PerformanceController {
         data: {
           songId,
           userName,
-          score: Math.round(analysis.score),
-          feedback: JSON.stringify(analysis.feedback.recommendations),
-          telemetry: analysis.telemetry as any,
-          diagnosis: analysis.diagnosis as any,
+          userId: req.user?.userId || null, // Conectar con usuario autenticado si existe
+          score: score,
+          feedback: JSON.stringify(feedback.recommendations),
+          telemetry: telemetry as any,
+          diagnosis: finalDiagnosis as any,
           performanceLog: {
             create: {
               rawData: performanceData,
@@ -126,7 +180,11 @@ export class PerformanceController {
         sessionId: session.id,
         score: session.score,
         feedback: feedbackArray,
-        analysis: analysisData,
+        analysis: {
+          pitchAccuracy,
+          stability,
+          timing,
+        },
         telemetry: session.telemetry,
         diagnosis: session.diagnosis,
         song: session.song,
@@ -189,15 +247,21 @@ export class PerformanceController {
       });
 
       // Calcular analysis desde telemetry si existe
+      // USAR LA MISMA FÓRMULA EXPONENCIAL que en create()
+      const pitchDeviation = (session.telemetry as any)?.pitchDeviationAverage || 0;
+      const stabilityVariance = (session.telemetry as any)?.stabilityVariance || 0;
+      
       const analysisFromData = session.telemetry ? {
         pitchAccuracy: { 
-          score: Math.max(0, 100 - Math.abs((session.telemetry as any).pitchDeviationAverage || 0) * 2), 
-          avgDeviationCents: (session.telemetry as any).pitchDeviationAverage || 0,
+          // Fórmula exponencial: 50 cents → 78%, 100 cents → 61%, 200 cents → 37%
+          score: Math.round(100 * Math.exp(-Math.abs(pitchDeviation) / 200)), 
+          avgDeviationCents: pitchDeviation,
           inTunePercentage: 0 
         },
         stability: { 
-          score: Math.max(0, 100 - (session.telemetry as any).stabilityVariance || 0), 
-          avgJitter: (session.telemetry as any).stabilityVariance || 0,
+          // Fórmula: varianza baja = buen score
+          score: Math.round(Math.max(0, 100 * Math.exp(-stabilityVariance / 50))), 
+          avgJitter: stabilityVariance,
           stableNotesPercentage: 0 
         },
         timing: { 
@@ -251,4 +315,87 @@ export class PerformanceController {
       return next(error);
     }
   }
+}
+
+// ============================================
+// FUNCIONES AUXILIARES DE CÁLCULO
+// ============================================
+
+/**
+ * Calcula métricas de precisión de afinación
+ * 
+ * FÓRMULA DE SCORE RECALIBRADA:
+ * - 0 cents = 100% (perfecto)
+ * - 25 cents = 90% (muy bueno - apenas perceptible)
+ * - 50 cents = 75% (bueno - medio semitono)
+ * - 100 cents = 50% (regular - un semitono completo)  
+ * - 200 cents = 25% (pobre - dos semitonos)
+ * - 400+ cents = 0% (muy desafinado)
+ */
+function calculatePitchAccuracy(data: PerformanceDataPoint[]) {
+  if (data.length === 0) {
+    return { score: 0, avgDeviationCents: 0, inTunePercentage: 0 };
+  }
+
+  const deviations: number[] = [];
+  let inTuneCount = 0;
+
+  data.forEach((point) => {
+    if (!point.detectedFrequency || !point.targetFrequency) return;
+
+    const cents = frequencyToCents(point.detectedFrequency, point.targetFrequency);
+    deviations.push(Math.abs(cents));
+
+    if (isInTune(point.detectedFrequency, point.targetFrequency)) {
+      inTuneCount++;
+    }
+  });
+
+  if (deviations.length === 0) {
+    return { score: 0, avgDeviationCents: 0, inTunePercentage: 0 };
+  }
+
+  // Usar RMS en lugar de promedio simple
+  const sumOfSquares = deviations.reduce((sum, val) => sum + val * val, 0);
+  const rmsDeviationCents = Math.sqrt(sumOfSquares / deviations.length);
+  
+  const inTunePercentage = (inTuneCount / data.length) * 100;
+
+  // NUEVA FÓRMULA: Curva exponencial más suave
+  // score = 100 * e^(-deviation / 200)
+  // Esto da: 0 cents → 100, 50 cents → 78, 100 cents → 61, 200 cents → 37, 400 cents → 14
+  const score = Math.round(100 * Math.exp(-rmsDeviationCents / 200));
+
+  console.log(`🎯 [PITCH SCORE] RMS: ${rmsDeviationCents.toFixed(1)} cents → Score: ${score}`);
+
+  return {
+    score: Math.max(0, Math.min(100, score)),
+    avgDeviationCents: Math.round(rmsDeviationCents * 10) / 10,
+    inTunePercentage: Math.round(inTunePercentage * 10) / 10,
+  };
+}
+
+/**
+ * Calcula métricas de estabilidad vocal
+ */
+function calculateStability(data: PerformanceDataPoint[]) {
+  const frequencies = data
+    .map((p) => p.detectedFrequency)
+    .filter((f): f is number => f !== null && f > 0);
+
+  if (frequencies.length === 0) {
+    return { score: 0, avgJitter: 0, stableNotesPercentage: 0 };
+  }
+
+  const avgJitter = calculateJitter(frequencies);
+  const stableNotesPercentage = calculateStabilityPercentage(frequencies);
+
+  // Score: jitter < 5 cents = excelente, > 20 cents = pobre
+  const score = Math.max(0, 100 - avgJitter * 5);
+
+  return {
+    score: Math.round(score),
+    avgJitter: Math.round(avgJitter * 10) / 10,
+    stableNotesPercentage: Math.round(stableNotesPercentage * 10) / 10,
+  };
 }

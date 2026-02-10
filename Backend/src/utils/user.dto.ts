@@ -1,3 +1,5 @@
+import { Prisma } from '@prisma/client';
+
 // ============================================
 // USER DTO (Data Transfer Object)
 // ============================================
@@ -12,6 +14,13 @@ export interface User {
   passwordHash: string;
   firstName: string;
   lastName: string;
+  // Perfil Vocal
+  vocalRange?: string | null;
+  voiceType?: string | null;
+  lowestNote?: string | null;
+  highestNote?: string | null;
+  comfortableRange?: Prisma.JsonValue | null;
+  vocalRangeSemitones?: number | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -25,6 +34,13 @@ export interface UserDTO {
   email: string;
   firstName: string;
   lastName: string;
+  // Perfil Vocal
+  vocalRange?: string | null;
+  voiceType?: string | null;
+  lowestNote?: string | null;
+  highestNote?: string | null;
+  comfortableRange?: [string, string] | null;
+  vocalRangeSemitones?: number | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -39,11 +55,27 @@ export interface UserDTO {
  * @returns Usuario sin información sensible
  */
 export function toUserDto(user: User): UserDTO {
+  // Convertir comfortableRange de JsonValue a [string, string] si existe
+  let comfortableRange: [string, string] | null | undefined = undefined;
+  if (user.comfortableRange) {
+    if (Array.isArray(user.comfortableRange) && user.comfortableRange.length === 2) {
+      comfortableRange = user.comfortableRange as [string, string];
+    }
+  } else if (user.comfortableRange === null) {
+    comfortableRange = null;
+  }
+
   return {
     id: user.id,
     email: user.email,
     firstName: user.firstName,
     lastName: user.lastName,
+    vocalRange: user.vocalRange,
+    voiceType: user.voiceType,
+    lowestNote: user.lowestNote,
+    highestNote: user.highestNote,
+    comfortableRange,
+    vocalRangeSemitones: user.vocalRangeSemitones,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };

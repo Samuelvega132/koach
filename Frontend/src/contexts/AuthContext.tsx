@@ -12,6 +12,13 @@ export interface User {
   email: string;
   firstName: string;
   lastName: string;
+  // Perfil Vocal
+  vocalRange?: string | null;
+  voiceType?: string | null;
+  lowestNote?: string | null;
+  highestNote?: string | null;
+  comfortableRange?: [string, string] | null;
+  vocalRangeSemitones?: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -106,7 +113,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
       ? localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN) 
       : null;
 
-    // If no token, check cookies via /auth/me
+    // Solo validar si hay token o usuario guardado
+    const storedUser = restoreUserFromStorage();
+    if (!token && !storedUser) {
+      setUser(null);
+      return;
+    }
+
+    // Validar con el backend solo si hay token
     try {
       const response = await fetch(`${API_CONFIG.baseURL}/auth/me`, {
         credentials: 'include',
@@ -125,8 +139,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
     }
 
-    // If API call fails, try to restore from local storage
-    const storedUser = restoreUserFromStorage();
+    // Si la API falla pero había usuario en storage, restaurarlo
     if (storedUser) {
       setUser(storedUser);
     } else {

@@ -40,15 +40,15 @@ export const AUDIO_CONFIG = {
      * Pitch Detection Range (Hz)
      * 
      * Rango de frecuencias válidas para detección de voz:
-     * - MIN: C3 (130 Hz) - nota más grave típica
-     * - MAX: E6 (1500 Hz) - nota más aguda típica
+     * - MIN: 55 Hz (A1) - nota más grave detectable para bajos profundos
+     * - MAX: 2000 Hz - rango extendido para voces agudas
      * 
-     * Voces graves (barítonos): Aumentar MIN a 100 Hz
-     * Voces agudas (sopranos): Aumentar MAX a 2000 Hz
+     * Optimizado para interfaces profesionales (Focusrite Scarlett)
+     * Con fftSize 8192 @ 48kHz = resolución de ~5.9 Hz
      */
     PITCH_RANGE: {
-        MIN: 50,   // Hz - límite inferior
-        MAX: 1500, // Hz - límite superior
+        MIN: 55,   // Hz - A1 (límite inferior para graves)
+        MAX: 2000, // Hz - rango completo para agudos
     },
 
     /**
