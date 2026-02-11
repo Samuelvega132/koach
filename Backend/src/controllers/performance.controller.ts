@@ -329,6 +329,8 @@ export class PerformanceController {
 // FUNCIONES AUXILIARES DE CÁLCULO
 // ============================================
 
+/* FUNCIONES COMENTADAS - No utilizadas actualmente pero mantenidas para referencia futura
+
 /**
  * Calcula métricas de precisión de afinación
  * 
@@ -339,7 +341,7 @@ export class PerformanceController {
  * - 100 cents = 50% (regular - un semitono completo)  
  * - 200 cents = 25% (pobre - dos semitonos)
  * - 400+ cents = 0% (muy desafinado)
- */
+ *
 function _calculatePitchAccuracy(data: PerformanceDataPoint[]) {
   if (data.length === 0) {
     return { score: 0, avgDeviationCents: 0, inTunePercentage: 0 };
@@ -385,7 +387,7 @@ function _calculatePitchAccuracy(data: PerformanceDataPoint[]) {
 
 /**
  * Calcula métricas de estabilidad vocal
- */
+ *
 function _calculateStability(data: PerformanceDataPoint[]) {
   const frequencies = data
     .map((p) => p.detectedFrequency)
@@ -407,3 +409,5 @@ function _calculateStability(data: PerformanceDataPoint[]) {
     stableNotesPercentage: Math.round(stableNotesPercentage * 10) / 10,
   };
 }
+
+*/
