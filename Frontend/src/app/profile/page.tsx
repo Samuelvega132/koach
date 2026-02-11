@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/contexts/AuthContext";
-import { User, TrendingUp, Award, Target, BarChart3, Calendar, Music } from "lucide-react";
+import { User, TrendingUp, Award, Target, BarChart3 } from "lucide-react";
 import { ProfileHeader, StatsCard, VocalCard, SessionCard } from "@/components/profile";
 import { VocalRangeResult, VoiceType } from "@/components/profile/VocalRangeWizard";
 import { API_CONFIG } from "@/config/api.config";
