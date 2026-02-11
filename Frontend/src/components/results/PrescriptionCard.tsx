@@ -1,6 +1,6 @@
 "use client";
 
-import { ClipboardList, Lightbulb, Star, Sparkles, Trophy, AlertTriangle } from "lucide-react";
+import { ClipboardList, Lightbulb, Star, Sparkles, Trophy } from "lucide-react";
 
 interface PrescriptionCardProps {
     prescription: string[];
