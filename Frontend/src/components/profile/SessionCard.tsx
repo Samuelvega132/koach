@@ -36,16 +36,6 @@ export const SessionCard = ({ session }: SessionCardProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showRawData, setShowRawData] = useState(false);
 
-  // Parse feedback si es string
-  let feedbackArray: string[] = [];
-  try {
-    feedbackArray = typeof session.feedback === 'string' 
-      ? JSON.parse(session.feedback) 
-      : session.feedback || [];
-  } catch {
-    feedbackArray = [];
-  }
-
   // Determinar color basado en score
   const scoreColor = session.score >= 80 ? 'text-green-400' :
                      session.score >= 60 ? 'text-yellow-400' : 
