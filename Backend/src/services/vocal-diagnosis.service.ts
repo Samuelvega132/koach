@@ -426,22 +426,29 @@ export class VocalDiagnosisService {
       return this.knowledgeBase;
     }
 
-    // 🔧 FIX: Buscar vocal_rules.pl en src/logic/ directamente (para desarrollo con ts-node)
-    // En producción (con dist/), usar la ruta relativa normal
-    const isDevelopment = __dirname.includes('src');
-    const kbPath = isDevelopment 
-      ? path.join(__dirname, '..', 'logic', 'vocal_rules.pl')  // src/services/../logic/vocal_rules.pl
-      : path.join(__dirname, '..', 'logic', 'vocal_rules.pl'); // dist/services/../logic/vocal_rules.pl
+    // Buscar vocal_rules.pl en la carpeta logic/ adyacente a services/
+    // Funciona tanto en desarrollo (src/) como en producción (dist/)
+    const kbPath = path.join(__dirname, '..', 'logic', 'vocal_rules.pl');
+    
+    console.log(`🔍 Buscando Knowledge Base en: ${kbPath}`);
+    console.log(`   __dirname actual: ${__dirname}`);
     
     if (!fs.existsSync(kbPath)) {
       console.error(`❌ Knowledge Base not found at: ${kbPath}`);
-      console.error(`   __dirname: ${__dirname}`);
-      console.error(`   isDevelopment: ${isDevelopment}`);
+      
+      // Listar archivos disponibles para debugging
+      const logicDir = path.join(__dirname, '..', 'logic');
+      if (fs.existsSync(logicDir)) {
+        console.error(`   Archivos en logic/: ${fs.readdirSync(logicDir).join(', ')}`);
+      } else {
+        console.error(`   ❌ El directorio logic/ no existe: ${logicDir}`);
+      }
+      
       throw new Error(`Prolog Knowledge Base not found: ${kbPath}`);
     }
 
     this.knowledgeBase = fs.readFileSync(kbPath, 'utf-8');
-    console.log(`📚 Knowledge Base loaded from: ${kbPath}`);
+    console.log(`✅ Knowledge Base cargado exitosamente (${this.knowledgeBase.length} caracteres)`);
     return this.knowledgeBase;
   }
 
