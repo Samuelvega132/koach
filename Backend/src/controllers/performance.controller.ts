@@ -3,7 +3,6 @@ import prisma from '../lib/prisma';
 import { VocalDiagnosisService } from '../services/vocal-diagnosis.service';
 import { validatePerformanceData } from '../utils/validation.utils';
 import { calculateSessionTelemetry } from '../utils/telemetry.utils';
-import { frequencyToCents, isInTune, calculateJitter, calculateStabilityPercentage } from '../utils/dsp.utils';
 import type { PerformanceDataPoint } from '../types';
 
 // ============================================
