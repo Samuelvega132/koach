@@ -44,4 +44,7 @@ if (config.isProduction) {
   if (config.JWT_REFRESH_SECRET === 'dev-refresh-secret-key-CHANGE-IN-PRODUCTION') {
     throw new Error('❌ JWT_REFRESH_SECRET debe ser configurado en producción');
   }
+  if (config.FRONTEND_URL === 'http://localhost:3000') {
+    console.warn('⚠️  FRONTEND_URL no configurado en producción. CORS puede fallar.');
+  }
 }
