@@ -258,8 +258,9 @@ export default function ResultsPage() {
                         
                         // Remover blur effects que causan problemas
                         clonedDoc.querySelectorAll('.backdrop-blur-md, .backdrop-blur-lg, .backdrop-blur-xl').forEach(el => {
-                            (el as HTMLElement).style.backdropFilter = 'none';
-                            (el as HTMLElement).style.webkitBackdropFilter = 'none';
+                            const element = el as HTMLElement;
+                            element.style.backdropFilter = 'none';
+                            (element.style as any).webkitBackdropFilter = 'none';
                         });
                         
                         // Forzar opacidad en glass panels
