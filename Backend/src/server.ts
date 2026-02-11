@@ -29,7 +29,7 @@ app.use(cookieParser()); // Parse cookies for refresh tokens
 // ============================================
 // ROUTES
 // ============================================
-app.get('/api/health', (_, res) => {
+app.get('/api/health', (_: express.Request, res: express.Response) => {
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -44,7 +44,7 @@ app.use('/api/auth', authRoutes);
 // ============================================
 // 404 HANDLER
 // ============================================
-app.use((req, res) => {
+app.use((req: express.Request, res: express.Response) => {
   res.status(404).json({
     error: 'Not Found',
     message: `Route ${req.method} ${req.path} not found`,

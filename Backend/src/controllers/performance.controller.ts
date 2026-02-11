@@ -340,7 +340,7 @@ export class PerformanceController {
  * - 200 cents = 25% (pobre - dos semitonos)
  * - 400+ cents = 0% (muy desafinado)
  */
-function calculatePitchAccuracy(data: PerformanceDataPoint[]) {
+function _calculatePitchAccuracy(data: PerformanceDataPoint[]) {
   if (data.length === 0) {
     return { score: 0, avgDeviationCents: 0, inTunePercentage: 0 };
   }
@@ -386,7 +386,7 @@ function calculatePitchAccuracy(data: PerformanceDataPoint[]) {
 /**
  * Calcula métricas de estabilidad vocal
  */
-function calculateStability(data: PerformanceDataPoint[]) {
+function _calculateStability(data: PerformanceDataPoint[]) {
   const frequencies = data
     .map((p) => p.detectedFrequency)
     .filter((f): f is number => f !== null && f > 0);
