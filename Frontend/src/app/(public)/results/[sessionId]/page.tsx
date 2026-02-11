@@ -21,7 +21,6 @@ import {
     BarChart3,
     LineChart,
     Target,
-    Lightbulb,
     Music2,
     Timer,
     Activity,
